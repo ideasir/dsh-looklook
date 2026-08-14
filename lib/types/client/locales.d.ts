@@ -1,0 +1,69 @@
+/** dsh-looklook client copy. Product copy is Chinese; English mirrors it. */
+/** Simplified Chinese dictionary (the key-set source of truth). */
+export declare const zh: {
+    'settings.nav': string;
+    'settings.intro': string;
+    'settings.provider.header': string;
+    'settings.provider.add': string;
+    'settings.provider.name': string;
+    'settings.provider.nameHint': string;
+    'settings.provider.baseURL': string;
+    'settings.provider.baseURLHint': string;
+    'settings.provider.model': string;
+    'settings.provider.modelHint': string;
+    'settings.provider.fetchModels': string;
+    'settings.provider.baseURLRequired': string;
+    'settings.provider.apiKey': string;
+    'settings.provider.apiKeyUnset': string;
+    'settings.provider.enabled': string;
+    'settings.provider.primary': string;
+    'settings.provider.fallback': string;
+    'settings.provider.moveUp': string;
+    'settings.provider.moveDown': string;
+    'settings.provider.remove': string;
+    'settings.provider.removeConfirm': string;
+    'settings.provider.empty': string;
+    'settings.save': string;
+    'settings.cancel': string;
+    'settings.saved': string;
+    'settings.saveFailed': string;
+    'settings.failoverHint': string;
+    'eye.on': string;
+    'eye.off': string;
+    'eye.unconfigured': string;
+};
+/** The looklook namespace key union. */
+export type LookLookKey = keyof typeof zh;
+/** English dictionary, checked complete against the zh key set. */
+export declare const en: {
+    'settings.nav': string;
+    'settings.intro': string;
+    'settings.provider.header': string;
+    'settings.provider.add': string;
+    'settings.provider.name': string;
+    'settings.provider.nameHint': string;
+    'settings.provider.baseURL': string;
+    'settings.provider.baseURLHint': string;
+    'settings.provider.model': string;
+    'settings.provider.modelHint': string;
+    'settings.provider.fetchModels': string;
+    'settings.provider.baseURLRequired': string;
+    'settings.provider.apiKey': string;
+    'settings.provider.apiKeyUnset': string;
+    'settings.provider.enabled': string;
+    'settings.provider.primary': string;
+    'settings.provider.fallback': string;
+    'settings.provider.moveUp': string;
+    'settings.provider.moveDown': string;
+    'settings.provider.remove': string;
+    'settings.provider.removeConfirm': string;
+    'settings.provider.empty': string;
+    'settings.save': string;
+    'settings.cancel': string;
+    'settings.saved': string;
+    'settings.saveFailed': string;
+    'settings.failoverHint': string;
+    'eye.on': string;
+    'eye.off': string;
+    'eye.unconfigured': string;
+};

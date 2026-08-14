@@ -1,0 +1,18 @@
+# dsh-looklook — vision-assist plugin layer.
+#
+# Installed as a bundle: `dsh plugin --profile <name> add dsh-looklook`.
+# The host row answers `prompt/image-admission` (admits images regardless of
+# the selected model's declared modalities) and rewrites model requests at the
+# `agent/request-messages` waterfall (translates image blocks into text for
+# text-only conversation models, or strips them to a placeholder while the
+# per-session eye toggle is off).
+#
+# Configuration defaults live in the row config below; the user layer in the
+# `vision` settings namespace overrides them at runtime (hot reload).
+- insert:
+    - id: looklook
+      name: dsh-looklook
+      config:
+        providers: []
+        sessionOverrides: {}
+        maxDescribeChars: 2000
