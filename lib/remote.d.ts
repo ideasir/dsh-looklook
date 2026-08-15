@@ -23,12 +23,16 @@ export type LooklookListModelsResult = {
 export declare class LooklookRemoteService extends TypertRemoteService {
     constructor(ctx: Context);
     /**
-     * Probe one provider's `/models` endpoint with its stored API key.
-     * @param provider - the provider's endpoint and credential reference.
+     * Probe one provider's `/models` endpoint. Uses the just-typed key when the
+     * caller passes one (the settings editor has not saved yet); otherwise reads
+     * the stored credential for the reference.
+     * @param provider - the provider's endpoint, credential reference, and an
+     *   optional just-typed key that takes precedence over storage.
      * @returns the model id list, or a classified failure.
      */
     listModels(provider: {
         baseURL: string;
         apiKeyEnv: string;
+        apiKey?: string;
     }): Promise<LooklookListModelsResult>;
 }

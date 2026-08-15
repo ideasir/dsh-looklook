@@ -18,20 +18,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
-    "lib/settings.js",
-    "lib/vision-client.js",
-    "lib/translate.js",
-    "lib/types.js",
-    "lib/remote.js",
-    "lib/client.js",
-    "lib/index.d.ts",
-    "lib/settings.d.ts",
-    "lib/vision-client.d.ts",
-    "lib/translate.d.ts",
-    "lib/types.d.ts",
-    "lib/remote.d.ts",
-    "lib/types/client/index.d.ts",
+    "lib",
     "cordis.patch.yml"
   ],
   "dsh": {
@@ -49,6 +36,8 @@
     "@deepseek-ai/dsh-llm": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-session": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-system-prompt": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
     "@deepseek-ai/schemastery": "^3.18.1"
   },
@@ -60,6 +49,7 @@
     "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-attachment": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-attachment": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",

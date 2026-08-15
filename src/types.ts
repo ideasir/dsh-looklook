@@ -8,7 +8,6 @@
  * declarations when both exist).
  */
 
-import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { GenerateOptions, ModelModality } from '@deepseek-ai/dsh-llm'
 import type { Scoped } from '@deepseek-ai/dsh-scope'

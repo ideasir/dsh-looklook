@@ -37,8 +37,8 @@ export interface DescribeFailure {
 
 export type DescribeResult = DescribeSuccess | DescribeFailure
 
-/** The vision model's system instruction: describe in Chinese, factually. */
-const SYSTEM_PROMPT = '你是一个图像识别助手。请用简洁的中文详细描述图片内容，包括主要物体、场景、人物动作和图中文字。只输出描述内容本身。'
+/** The vision model's system instruction: answer the given question about the image. */
+const SYSTEM_PROMPT = '你是一个图像识别助手。请仔细观察图片，针对用户给出的问题给出准确、简洁的回答。用户问什么就答什么（例如问人数就答人数，问季节就答季节，要求全量描述才做全量描述）。只输出回答内容本身，不要输出任何额外说明。'
 
 /** Classify an HTTP status into a stable error code. */
 function classifyStatus(status: number): VisionErrorCode {
@@ -75,6 +75,7 @@ async function describeOnce(
   images: readonly DescribeImageInput[],
   maxDescribeChars: number,
   signal: AbortSignal,
+  question: string,
 ): Promise<{ ok: true; text: string } | ProviderFailure> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(new Error('vision timeout')), provider.timeoutMs ?? 30_000)
@@ -82,6 +83,7 @@ async function describeOnce(
   try {
     const parts = [
       { type: 'text', text: SYSTEM_PROMPT },
+      { type: 'text', text: question },
       ...images.map(image => ({
         type: 'image_url',
         image_url: { url: `data:${image.mediaType};base64,${Buffer.from(image.data).toString('base64')}` },
@@ -169,6 +171,7 @@ export async function describeImages(
   images: readonly DescribeImageInput[],
   maxDescribeChars: number,
   signal: AbortSignal,
+  question = '请详细描述这张图片的内容。',
 ): Promise<DescribeResult> {
   if (providers.length === 0) {
     return {
@@ -192,7 +195,7 @@ export async function describeImages(
       })
       continue
     }
-    const result = await describeOnce(provider, apiKey, images, maxDescribeChars, signal)
+    const result = await describeOnce(provider, apiKey, images, maxDescribeChars, signal, question)
     if (result.ok) {
       const degradedFrom = failures[0]?.provider
       return {

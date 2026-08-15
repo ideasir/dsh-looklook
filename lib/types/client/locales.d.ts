@@ -12,9 +12,11 @@ export declare const zh: {
     'settings.provider.model': string;
     'settings.provider.modelHint': string;
     'settings.provider.fetchModels': string;
+    'settings.provider.modelsFetched': string;
     'settings.provider.baseURLRequired': string;
     'settings.provider.apiKey': string;
     'settings.provider.apiKeyUnset': string;
+    'settings.provider.apiKeyConfigured': string;
     'settings.provider.enabled': string;
     'settings.provider.primary': string;
     'settings.provider.fallback': string;
@@ -47,9 +49,11 @@ export declare const en: {
     'settings.provider.model': string;
     'settings.provider.modelHint': string;
     'settings.provider.fetchModels': string;
+    'settings.provider.modelsFetched': string;
     'settings.provider.baseURLRequired': string;
     'settings.provider.apiKey': string;
     'settings.provider.apiKeyUnset': string;
+    'settings.provider.apiKeyConfigured': string;
     'settings.provider.enabled': string;
     'settings.provider.primary': string;
     'settings.provider.fallback': string;

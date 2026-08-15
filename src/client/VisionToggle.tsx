@@ -13,7 +13,7 @@ export interface VisionToggleInjected {
   /** Per-session eye controller (store + load + toggle). */
   controller: EyeController
   /** Snapshot selector bound to the controller store. */
-  useSnapshot: <T>(selector: (state: EyeController['store']['getSnapshot'] extends () => infer S ? S : never) => unknown) => unknown
+  useSnapshot: (selector: (state: EyeController['store']['getSnapshot'] extends () => infer S ? S : never) => unknown) => unknown
   /** Bound translate for the `looklook` namespace. */
   t: TranslateNS<'looklook'>
 }

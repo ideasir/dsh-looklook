@@ -1,3 +1,5 @@
 node_modules/
 *.log
 .DS_Store
+# 开发日记：内部资料，绝不推送/发布
+DEVLOG.md

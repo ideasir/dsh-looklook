@@ -306,7 +306,7 @@ export function VisionSettingsSection(props: VisionSettingsInjected) {
   const renderEditor = (
     draft: ProviderDraft,
     onPatch: (next: Partial<ProviderDraft>) => void,
-    isNew: boolean,
+    _isNew: boolean,
   ): ReactNode => (
     <div style={layout.editor}>
       <div style={layout.field}>

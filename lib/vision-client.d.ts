@@ -42,4 +42,4 @@ export declare function statusMessage(code: VisionErrorCode, model: string): str
  * provider failure fails over to the next. Returns the first success, or a
  * classified failure after every provider was tried.
  */
-export declare function describeImages(providers: readonly VisionProviderConfig[], resolveApiKey: (ref: string) => Promise<string | undefined>, images: readonly DescribeImageInput[], maxDescribeChars: number, signal: AbortSignal): Promise<DescribeResult>;
+export declare function describeImages(providers: readonly VisionProviderConfig[], resolveApiKey: (ref: string) => Promise<string | undefined>, images: readonly DescribeImageInput[], maxDescribeChars: number, signal: AbortSignal, question?: string): Promise<DescribeResult>;

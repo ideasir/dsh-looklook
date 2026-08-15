@@ -1,46 +1,81 @@
 /**
- * Image → text translation for text-only conversation models, and the
- * eye-off placeholder path. Translation results are cached in the session log
- * as `vision/describe` events (keyed by attachment id), so the same image is
- * recognized once and replayed from the log on later requests.
+ * Image handling for text-only conversation models.
+ *
+ * Pseudo-native multimodal: the plugin does NOT translate images up front.
+ * It replaces each image with a machine-readable image reference the MAIN
+ * MODEL can pass to the `looklook_describe` tool, plus an attachment marker
+ * so the plugin's client renders the original image in the chat. The main
+ * model decides what to ask the vision model (targeted question or full
+ * description, based on the user's question) — no hardcoded rules here.
+ *
+ * The session log only ever contains harness-native events.
  */
 
-import type { Context } from '@deepseek-ai/cordis'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { contentHasImage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ImageBlock, Message } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionId } from '@deepseek-ai/dsh-session'
-import type { VisionScope } from './settings.ts'
-import { describeImages, statusMessage, type DescribeResult } from './vision-client.ts'
-import type { VisionDescribeEvent } from './types.ts'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import { statusMessage } from './vision-client.ts'
 
 /** The text the conversation model receives for an image while the eye is off. */
 export const PLACEHOLDER_TEXT = '[图片已省略]\n没有开启多模态功能'
 
-/** Compose the model-visible text for one recognition result (all Chinese). */
-export function describeResultText(result: DescribeResult): string {
-  if (result.ok) {
-    const base = `【图片识别 · ${result.model}】(当前对话模型为纯文本,不显示原图)\n以下内容为该图片经视觉模型识别后的完整文字描述。图片文件不可访问,请直接依据以下描述回答,无需查找任何文件:\n${result.text}`
-    if (result.degradedFrom !== undefined) {
-      return `${base}\n\n⚠️ 提示：视觉模型「${result.degradedFrom}」不可用，本次已自动切换为「${result.model}」完成识别。`
-    }
-    return base
-  }
-  const model = result.model.length > 0 ? result.model : '未配置'
-  return `【图片识别失败】\n原因：${result.message}\n涉及模型：${model}\n请到「设置 → 视觉模型」检查配置后重试。`
+/** Marker delimiters the client scans for to render the original image. */
+export const IMAGE_MARKER_PREFIX = '【附图:'
+export const IMAGE_MARKER_SUFFIX = '】'
+
+/** Hide delimiters: the client strips everything between these two markers. */
+export const HIDE_START = '【looklook:开始】'
+export const HIDE_END = '【looklook:结束】'
+
+/** Compose the attachment marker appended to the model-visible text. The
+ * marker carries the full image reference JSON so the client can render the
+ * image at its natural aspect ratio and open it in the native lightbox. */
+export function imageMarker(ref: ImageAttachmentRef): string {
+  return `\n\n${IMAGE_MARKER_PREFIX}${imageRefJson(ref)}${IMAGE_MARKER_SUFFIX}`
+}
+
+/** JSON serialization of one image reference (the tool's image_ref argument). */
+export function imageRefJson(ref: ImageAttachmentRef): string {
+  return JSON.stringify({
+    attachmentId: ref.attachmentId,
+    mediaType: ref.mediaType,
+    bytes: ref.bytes,
+    width: ref.width,
+    height: ref.height,
+  })
+}
+
+/**
+ * Build the model-visible text for one image: a hidden-from-display tool
+ * reference (the main model uses it to call `looklook_describe`) plus the
+ * visible attachment marker that makes the client render the image.
+ */
+export function buildImageToolReference(image: ImageBlock): string {
+  const ref = image.attachment
+  return [
+    HIDE_START,
+    '用户发来一张图片，图片内容对你不可见。',
+    '图片引用（请原样填入 looklook_describe 工具的 image_ref 参数，不要改动）:',
+    imageRefJson(ref),
+    '要回答与这张图片相关的任何问题，你必须先调用 looklook_describe 工具查看图片。',
+    HIDE_END,
+    imageMarker(ref),
+  ].join('\n')
 }
 
 /** Replace every image block (including nested tool-result content) with one text block. */
 function rewriteContent(
   blocks: readonly ContentBlock[],
   textFor: (image: ImageBlock) => string,
+  onImage?: (image: ImageBlock) => void,
 ): ContentBlock[] {
   const out: ContentBlock[] = []
   for (const block of blocks) {
     if (block.type === 'image') {
+      onImage?.(block)
       out.push({ type: 'text', text: textFor(block) })
     } else if (block.type === 'tool-result') {
-      out.push({ ...block, content: rewriteContent(block.content, textFor) })
+      out.push({ ...block, content: rewriteContent(block.content, textFor, onImage) })
     } else {
       out.push(block)
     }
@@ -52,140 +87,41 @@ function messagesHaveImage(messages: readonly Message[]): boolean {
   return messages.some(message => contentHasImage(message.content))
 }
 
-/** Eye-off path: images become the placeholder; nothing else changes. */
+/** Eye-off path: images become the placeholder (original image still shows in the chat via the marker). */
 export function replaceImagesWithPlaceholder(messages: readonly Message[]): Message[] {
   if (!messagesHaveImage(messages)) return messages as Message[]
   return messages.map(message => (
     contentHasImage(message.content)
-      ? { ...message, content: rewriteContent(message.content, () => PLACEHOLDER_TEXT) }
+      ? {
+          ...message,
+          content: rewriteContent(
+            message.content,
+            image => PLACEHOLDER_TEXT + imageMarker(image.attachment),
+          ),
+        }
       : message
   ))
 }
 
-/** Read the recognition cache for one session from its logged `vision/describe` events. */
-function cachedDescriptions(session: Session): Map<string, VisionDescribeEvent> {
-  const cache = new Map<string, VisionDescribeEvent>()
-  for (const event of session.events) {
-    if (event.type !== 'vision/describe') continue
-    const record = event.data as VisionDescribeEvent
-    if (record.ok && record.text !== undefined) cache.set(record.attachmentId, record)
-  }
-  return cache
-}
-
 /**
- * Record one recognition outcome in the session log. The `{ ignorable: true }`
- * option is the out-of-repo plugin event channel (upstream `Session.append`
- * addition); the runtime check on the returned event catches a build that
- * does not support it, so the plugin degrades to in-memory caching instead of
- * persisting an event an older reader would refuse.
+ * Eye-on + text-only path: replace every image with its tool reference.
+ * Fast (no vision call) so the message appears in the chat immediately.
+ * When a registry is given, each image's exact reference is recorded so the
+ * describe tool can read the image by the id the user message carries.
  */
-function recordDescribe(
-  ctx: Context,
-  sessionId: SessionId | undefined,
-  data: VisionDescribeEvent,
-): void {
-  if (sessionId === undefined) return
-  const session = ctx.sessions.get(sessionId)
-  if (session === undefined) return
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const event = (session.append as any)('vision/describe', data, { ignorable: true })
-  if (event.ignorable !== true) {
-    ctx.logger.warn(
-      'dsh-looklook: this DSH build does not persist plugin events (ignorable append unsupported); recognition cache lives in memory only — apply the compatibility patch or upgrade DSH',
-    )
-  }
-}
-
-/** In-memory recognition cache fallback: sessionId → attachmentId → text. */
-export type VisionMemoryCache = Map<string, Map<string, string>>
-
-/** Eye-on, text-only path: describe every image and replace it with the result text. */
-export async function translateImages(
-  ctx: Context,
+export function rewriteImagesToToolReferences(
   messages: readonly Message[],
-  sessionId: SessionId | undefined,
-  scope: VisionScope,
-  signal: AbortSignal | undefined,
-  memory: VisionMemoryCache | undefined,
-  persist: boolean,
-): Promise<Message[]> {
-  const session = sessionId === undefined ? undefined : ctx.sessions.get(sessionId)
-  const cache = session === undefined ? new Map<string, VisionDescribeEvent>() : cachedDescriptions(session)
-  const providers = scope.get().providers.filter(provider => provider.enabled !== false)
-  const maxChars = scope.get().maxDescribeChars
-  const resolveApiKey = async (ref: string): Promise<string | undefined> => {
-    const credentials = ctx.get('credentials')
-    if (credentials === undefined) return undefined
-    const resolved = await credentials.resolve(credentialRef(ref))
-    return resolved?.value
+  registry?: Map<string, ImageAttachmentRef>,
+): Message[] {
+  if (!messagesHaveImage(messages)) return messages as Message[]
+  const onImage = (image: ImageBlock): void => {
+    registry?.set(String(image.attachment.attachmentId), image.attachment)
   }
-
-  const textFor = async (image: ImageBlock): Promise<string> => {
-    const attachmentId = String(image.attachment.attachmentId)
-    const cached = cache.get(attachmentId)
-    if (cached !== undefined && cached.text !== undefined) return cached.text
-    const sessionKey = sessionId === undefined ? '' : String(sessionId)
-    const memText = memory?.get(sessionKey)?.get(attachmentId)
-    if (memText !== undefined) return memText
-    const stored = await ctx.attachments.readImage(image.attachment, signal)
-    const result = await describeImages(providers, resolveApiKey, [{
-      mediaType: stored.ref.mediaType,
-      data: stored.data,
-    }], maxChars, signal ?? new AbortController().signal)
-    const text = describeResultText(result)
-    if (persist) {
-      recordDescribe(ctx, sessionId, {
-        attachmentId,
-        provider: result.provider,
-        model: result.model,
-        ok: result.ok,
-        ...result.ok ? {} : { error: { code: result.code } },
-        text,
-        ...result.ok && result.degradedFrom !== undefined ? { degradedFrom: result.degradedFrom } : {},
-      })
-    }
-    if (memory !== undefined) {
-      let sessionCache = memory.get(sessionKey)
-      if (sessionCache === undefined) {
-        sessionCache = new Map()
-        memory.set(sessionKey, sessionCache)
-      }
-      sessionCache.set(attachmentId, text)
-    }
-    return text
-  }
-
-  const out: Message[] = []
-  for (const message of messages) {
-    if (!contentHasImage(message.content)) {
-      out.push(message)
-      continue
-    }
-    out.push({
-      ...message,
-      content: await rewriteContentAsync(message.content, textFor),
-    })
-  }
-  return out
-}
-
-/** Async variant of {@link rewriteContent} for the recognition path. */
-async function rewriteContentAsync(
-  blocks: readonly ContentBlock[],
-  textFor: (image: ImageBlock) => Promise<string>,
-): Promise<ContentBlock[]> {
-  const out: ContentBlock[] = []
-  for (const block of blocks) {
-    if (block.type === 'image') {
-      out.push({ type: 'text', text: await textFor(block) })
-    } else if (block.type === 'tool-result') {
-      out.push({ ...block, content: await rewriteContentAsync(block.content, textFor) })
-    } else {
-      out.push(block)
-    }
-  }
-  return out
+  return messages.map(message => (
+    contentHasImage(message.content)
+      ? { ...message, content: rewriteContent(message.content, buildImageToolReference, onImage) }
+      : message
+  ))
 }
 
 export { statusMessage }

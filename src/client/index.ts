@@ -17,6 +17,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createEyeController, type EyeController } from './eye-controller.ts'
+import { LooklookUserMessageNodeView } from './UserMessageNodeView.tsx'
 import { VisionSettingsSection, type VisionSettingsInjected } from './VisionSettings.tsx'
 import { VisionToggle, type VisionToggleInjected } from './VisionToggle.tsx'
 import { en, zh, type LookLookKey } from './locales.ts'
@@ -174,4 +175,23 @@ export function apply(ctx: ClientContext): void {
       }
     },
   }, VisionToggle))
+
+  // Render the ORIGINAL image in user messages: the host embeds an attachment
+  // marker in the recognition text (rc.6 record), and this view scans for it,
+  // loads the image via the conversation's loadImage, and draws it above the
+  // text. Native image blocks (multimodal models / newer harnesses) render the
+  // same way. Priority -1 shadows the built-in user bubble; the view is
+  // defensive and falls back to plain text on unexpected content.
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+    name: 'conversation.chat.node',
+    key: 'user',
+    priority: -1,
+    locale: NS,
+  }, LooklookUserMessageNodeView))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+    name: 'conversation.chat.node',
+    key: 'steering',
+    priority: -1,
+    locale: NS,
+  }, LooklookUserMessageNodeView))
 }
