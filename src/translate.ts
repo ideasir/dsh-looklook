@@ -20,7 +20,7 @@ export const PLACEHOLDER_TEXT = '[图片已省略]\n没有开启多模态功能'
 /** Compose the model-visible text for one recognition result (all Chinese). */
 export function describeResultText(result: DescribeResult): string {
   if (result.ok) {
-    const base = `【图片识别 · ${result.model}】\n${result.text}`
+    const base = `【图片识别 · ${result.model}】(当前对话模型为纯文本,不显示原图)\n以下内容为该图片经视觉模型识别后的完整文字描述。图片文件不可访问,请直接依据以下描述回答,无需查找任何文件:\n${result.text}`
     if (result.degradedFrom !== undefined) {
       return `${base}\n\n⚠️ 提示：视觉模型「${result.degradedFrom}」不可用，本次已自动切换为「${result.model}」完成识别。`
     }
@@ -97,6 +97,9 @@ function recordDescribe(
   }
 }
 
+/** In-memory recognition cache fallback: sessionId → attachmentId → text. */
+export type VisionMemoryCache = Map<string, Map<string, string>>
+
 /** Eye-on, text-only path: describe every image and replace it with the result text. */
 export async function translateImages(
   ctx: Context,
@@ -104,6 +107,8 @@ export async function translateImages(
   sessionId: SessionId | undefined,
   scope: VisionScope,
   signal: AbortSignal | undefined,
+  memory: VisionMemoryCache | undefined,
+  persist: boolean,
 ): Promise<Message[]> {
   const session = sessionId === undefined ? undefined : ctx.sessions.get(sessionId)
   const cache = session === undefined ? new Map<string, VisionDescribeEvent>() : cachedDescriptions(session)
@@ -117,23 +122,37 @@ export async function translateImages(
   }
 
   const textFor = async (image: ImageBlock): Promise<string> => {
-    const cached = cache.get(String(image.attachment.attachmentId))
+    const attachmentId = String(image.attachment.attachmentId)
+    const cached = cache.get(attachmentId)
     if (cached !== undefined && cached.text !== undefined) return cached.text
+    const sessionKey = sessionId === undefined ? '' : String(sessionId)
+    const memText = memory?.get(sessionKey)?.get(attachmentId)
+    if (memText !== undefined) return memText
     const stored = await ctx.attachments.readImage(image.attachment, signal)
     const result = await describeImages(providers, resolveApiKey, [{
       mediaType: stored.ref.mediaType,
       data: stored.data,
     }], maxChars, signal ?? new AbortController().signal)
     const text = describeResultText(result)
-    recordDescribe(ctx, sessionId, {
-      attachmentId: String(image.attachment.attachmentId),
-      provider: result.provider,
-      model: result.model,
-      ok: result.ok,
-      ...result.ok ? {} : { error: { code: result.code } },
-      text,
-      ...result.ok && result.degradedFrom !== undefined ? { degradedFrom: result.degradedFrom } : {},
-    })
+    if (persist) {
+      recordDescribe(ctx, sessionId, {
+        attachmentId,
+        provider: result.provider,
+        model: result.model,
+        ok: result.ok,
+        ...result.ok ? {} : { error: { code: result.code } },
+        text,
+        ...result.ok && result.degradedFrom !== undefined ? { degradedFrom: result.degradedFrom } : {},
+      })
+    }
+    if (memory !== undefined) {
+      let sessionCache = memory.get(sessionKey)
+      if (sessionCache === undefined) {
+        sessionCache = new Map()
+        memory.set(sessionKey, sessionCache)
+      }
+      sessionCache.set(attachmentId, text)
+    }
     return text
   }
 

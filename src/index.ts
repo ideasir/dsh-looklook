@@ -24,7 +24,7 @@ import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type { SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session/types'
 import { Config, eyeStateFor, type VisionSettings, type VisionScope } from './settings.ts'
-import { replaceImagesWithPlaceholder, translateImages } from './translate.ts'
+import { replaceImagesWithPlaceholder, translateImages, type VisionMemoryCache } from './translate.ts'
 import { LooklookRemoteService } from './remote.ts'
 import type {} from './types.ts'
 
@@ -56,6 +56,24 @@ function requestHasImage(options: GenerateOptions): boolean {
  */
 export function apply(ctx: Context, config: VisionSettings): void {
   const scope: VisionScope = ctx.settings.register(settingsNamespace('vision'), Config, { base: config })
+
+  // rc.6 session.append drops the `ignorable` option, so a plugin event would
+  // be persisted without its marker and refuse log reads on replay. Detect
+  // support once on a detached probe session; without it the recognition
+  // cache lives in memory only (the plugin's documented degradation).
+  let persistRecognitions = false
+  try {
+    const probe = ctx.sessions.prepare('looklook-vision-probe' as SessionId)
+    const event = (probe.append as unknown as (t: string, d: unknown, o?: object) => { ignorable?: boolean })(
+      'vision/describe',
+      { attachmentId: 'probe', ok: true, provider: '', model: '', text: '' },
+      { ignorable: true },
+    )
+    persistRecognitions = event?.ignorable === true
+  } catch {
+    persistRecognitions = false
+  }
+  const memoryCache: VisionMemoryCache = new Map()
 
   // Host receiver for the client's model-discovery RPC (settings page).
   ctx.plugin(LooklookRemoteService)
@@ -106,6 +124,8 @@ export function apply(ctx: Context, config: VisionSettings): void {
       sessionId,
       scope,
       signal,
+      memoryCache,
+      persistRecognitions,
     )
     return { ...decision, messages: rewritten as UserMessage[] }
   })
@@ -134,6 +154,8 @@ export function apply(ctx: Context, config: VisionSettings): void {
       request.sessionId,
       scope,
       request.signal,
+      memoryCache,
+      persistRecognitions,
     )
     return { ...request, messages }
   })
