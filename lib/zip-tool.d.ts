@@ -8,7 +8,6 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { ZipStore } from './zip-store.ts';
 import type { ZipEntry, ZipExtractResult } from './zip-store.ts';
-import type { LooklookScope } from './settings.ts';
 /** Arguments for the process_zip tool. */
 export interface ToolArgs {
     path: string;
@@ -149,8 +148,7 @@ export declare function buildExtractSummary(result: ZipExtractResult): string;
  */
 export declare function executeTool(store: ZipStore, args: ToolArgs, signal?: AbortSignal): Promise<ToolOutput>;
 /**
- * Register the `process_zip` tool. Execution is gated on the live `zip`
- * feature toggle, so disabling ZIP in settings makes the tool fail loudly
- * (the schema still advertises it; the toggle is a settings decision).
+ * Register the `process_zip` tool (always available; the upload extension
+ * whitelist is governed by the `moreExtensions` switch instead).
  */
-export declare function registerZipTool(ctx: Context, features: LooklookScope): void;
+export declare function registerZipTool(ctx: Context): void;

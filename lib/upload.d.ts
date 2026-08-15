@@ -13,6 +13,7 @@
  * route), so no DSH source is modified.
  */
 import type { Context } from '@deepseek-ai/cordis';
+import type { LooklookScope } from './settings.ts';
 /** Upload cap: 500 MB for every file type. */
 export declare const MAX_UPLOAD_BYTES: number;
 /** Archive extensions accepted by the upload channel. */
@@ -25,8 +26,8 @@ export declare const UPLOADS_DIR = ".uploads";
 export declare function isArchiveName(name: string): boolean;
 /** Whether the extension is on the video whitelist. */
 export declare function isVideoName(name: string): boolean;
-/** Whether the name is allowed by the upload channel at all. */
-export declare function isAllowedUploadName(name: string): boolean;
+/** Whether the name passes the extension whitelist for the given policy. */
+export declare function isAllowedUploadName(name: string, moreExtensions: boolean): boolean;
 /** Whether the 7z CLI is available on PATH. */
 export declare function is7zInstalled(): Promise<boolean>;
 /** Install p7zip-full via apt (best effort). */
@@ -44,4 +45,4 @@ export interface UploadRequest {
  * Register the upload + 7z routes on the webServer service.
  * @param ctx - host context (injects webServer + sessions).
  */
-export declare function registerUploadRoutes(ctx: Context): void;
+export declare function registerUploadRoutes(ctx: Context, features: LooklookScope): void;

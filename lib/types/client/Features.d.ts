@@ -1,11 +1,9 @@
 /**
- * LooklookFeatures: the plugin master-switch settings section
- * (`settings.section`). Renders:
- * - 开启多模态 — master switch for the vision feature; when OFF the plugin is
- *   invisible to images (native DSH behavior) and the vision-model section is
- *   hidden.
- * - 开启 ZIP — master switch for the process_zip tool and archive uploads.
- * - 安装支持 — 7z CLI install button (host apt install, user-triggered).
+ * LooklookFeatures: the master-switch controls inside the looklook plugin
+ * card. Two slider-style switches:
+ * - 支持更多扩展名 — ON adds .7z / video to the upload whitelist (.zip stays);
+ * - 支持多模态 — ON enables image recognition and shows the vision config.
+ * Plus the 7z install support row.
  */
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client';
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots';
@@ -16,10 +14,10 @@ export interface FeaturesInjected {
     api: IApiClient;
     /** Bound translate for the `looklook` namespace. */
     t: TranslateNS<'looklook'>;
-    /** Feature controller (multimodal / zip toggles). */
+    /** Feature controller (multimodal / moreExtensions toggles). */
     features: FeatureController;
     /** Reactive snapshot of the feature switches. */
     useFeatures: () => FeatureState;
 }
-/** The plugin settings section body. */
+/** The master-switch + install-support body. */
 export declare function LooklookFeaturesSection(props: FeaturesInjected): import("react").JSX.Element;

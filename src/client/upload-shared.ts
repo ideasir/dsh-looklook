@@ -8,7 +8,7 @@
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
 
 /** Accepted extensions (archives + video). */
-const ACCEPT_EXTENSIONS = ['.zip', '.7z', '.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v']
+export const ACCEPT_EXTENSIONS = ['.zip', '.7z', '.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v']
 
 /** Whether a file name is uploadable through the looklook channel. */
 export function isUploadableName(name: string): boolean {

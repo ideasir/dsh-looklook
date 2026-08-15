@@ -11,12 +11,12 @@ import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
 /** Feature-switch state. */
 export type FeatureState =
   | { status: 'loading' }
-  | { status: 'ready'; multimodal: boolean; zip: boolean }
+  | { status: 'ready'; multimodal: boolean; moreExtensions: boolean }
 
 /** The `looklook` settings namespace value as read through the wire. */
 interface LooklookSettingsView {
   multimodal?: boolean
-  zip?: boolean
+  moreExtensions?: boolean
 }
 
 function looklookSettingsOf(namespaces: unknown): LooklookSettingsView | undefined {
@@ -34,7 +34,7 @@ export interface FeatureController {
   store: SnapshotStore<FeatureState>
   load(): void
   setMultimodal(next: boolean): void
-  setZip(next: boolean): void
+  setMoreExtensions(next: boolean): void
 }
 
 /** Create the plugin feature controller. */
@@ -43,14 +43,14 @@ export function createFeatureController(api: IApiClient): FeatureController {
   const refresh = async (): Promise<void> => {
     const response = await api.settings.describe({})
     if (!response.result.ok) {
-      store.set({ status: 'ready', multimodal: true, zip: true })
+      store.set({ status: 'ready', multimodal: true, moreExtensions: true })
       return
     }
     const value = looklookSettingsOf(response.result.value.namespaces)
     store.set({
       status: 'ready',
       multimodal: value?.multimodal !== false,
-      zip: value?.zip !== false,
+      moreExtensions: value?.moreExtensions !== false,
     })
   }
   const update = async (patch: Record<string, boolean>): Promise<void> => {
@@ -61,7 +61,7 @@ export function createFeatureController(api: IApiClient): FeatureController {
     store,
     load: () => { void refresh() },
     setMultimodal: (next) => { void update({ multimodal: next }) },
-    setZip: (next) => { void update({ zip: next }) },
+    setMoreExtensions: (next) => { void update({ moreExtensions: next }) },
   }
 }
 

@@ -10,8 +10,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { ZipStore, DEFAULT_MAX_ZIP_SIZE, DEFAULT_EXTRACT_DIR } from './zip-store.ts'
 import type { ZipEntry, ZipExtractResult, ZipConfig } from './zip-store.ts'
-import type { LooklookScope } from './settings.ts'
-import { looklookFeatures } from './settings.ts'
 
 // ── Types ──
 
@@ -215,11 +213,10 @@ export async function executeTool(
 // ── Registration ──
 
 /**
- * Register the `process_zip` tool. Execution is gated on the live `zip`
- * feature toggle, so disabling ZIP in settings makes the tool fail loudly
- * (the schema still advertises it; the toggle is a settings decision).
+ * Register the `process_zip` tool (always available; the upload extension
+ * whitelist is governed by the `moreExtensions` switch instead).
  */
-export function registerZipTool(ctx: Context, features: LooklookScope): void {
+export function registerZipTool(ctx: Context): void {
   const store = new ZipStore({ maxSize: DEFAULT_MAX_ZIP_SIZE, extractDir: DEFAULT_EXTRACT_DIR })
   ctx.tools.register(defineTool({
     name: TOOL_NAME,
@@ -241,10 +238,6 @@ export function registerZipTool(ctx: Context, features: LooklookScope): void {
       },
     },
     async execute(args: any, exec: any): Promise<any> {
-      const enabled = looklookFeatures(features).zip
-      if (!enabled) {
-        throw new Error('ZIP 功能未开启：请在插件设置中开启「ZIP 处理」后再使用 process_zip')
-      }
       return executeTool(store, args, exec?.signal)
     },
   }))

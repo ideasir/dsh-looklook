@@ -39,8 +39,8 @@ export type VisionScope = SettingsScope<VisionSettings>;
 export interface LooklookSettings {
     /** Master switch for the vision (multi-modal) feature. */
     multimodal: boolean;
-    /** Whether the ZIP processing feature is enabled. */
-    zip: boolean;
+    /** Whether the upload channel accepts the extended extension set. */
+    moreExtensions: boolean;
 }
 export declare const LooklookConfig: Schema<LooklookSettings>;
 /** The settings owner handle for the feature toggles. */

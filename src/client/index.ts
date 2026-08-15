@@ -74,12 +74,17 @@ export function apply(ctx: ClientContext): void {
   const useMultimodal = (): boolean => useFeaturesSnapshot(
     (s: { status: string; multimodal?: boolean }) => s.status === 'ready' && s.multimodal !== false,
   ) as boolean
-  const useZipEnabled = (): boolean => useFeaturesSnapshot(
-    (s: { status: string; zip?: boolean }) => s.status === 'ready' && s.zip !== false,
+  const useMoreExtensions = (): boolean => useFeaturesSnapshot(
+    (s: { status: string; moreExtensions?: boolean }) => s.status === 'ready' && s.moreExtensions !== false,
   ) as boolean
   const useFeatures = (): import('./feature-controller.ts').FeatureState => useFeaturesSnapshot(
     (s: import('./feature-controller.ts').FeatureState) => s,
   ) as import('./feature-controller.ts').FeatureState
+  /** Current policy for the drop handler (reads the live store, not reactive). */
+  const policyAt = (): 'base' | 'extended' => {
+    const state = features.store.getSnapshot()
+    return state.status === 'ready' && state.moreExtensions !== false ? 'extended' : 'base'
+  }
 
   // Pushed invalidations refresh loaded controllers without polling.
   ctx.effect(() => {
@@ -186,7 +191,7 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
     name: 'conversation.input.left',
     id: UPLOAD_ID,
-    inject: (sessionId: string): UploadInjected => ({ api: connection.api, t, useZipEnabled, sessionId }),
+    inject: (sessionId: string): UploadInjected => ({ api: connection.api, t, useMoreExtensions, sessionId }),
   }, UploadButton))
 
   // Drag-and-drop of archive/video files onto the page: intercept in the
@@ -203,9 +208,15 @@ export function apply(ctx: ClientContext): void {
     const onDropCapture = (event: DragEvent): void => {
       const files = [...(event.dataTransfer?.files ?? [])]
       if (files.length === 0) return
-      // Intercept only when EVERY dropped file is an archive/video; otherwise
-      // let the built-in handler deal with the drop (images stay native).
-      if (!files.every(file => isUploadableName(file.name))) return
+      // Intercept only when EVERY dropped file is allowed by the current
+      // extension policy; otherwise the built-in handler deals with the drop
+      // (images stay native).
+      const policy = policyAt()
+      const allowed = (name: string): boolean => {
+        if (policy === 'base') return name.toLowerCase().endsWith('.zip')
+        return isUploadableName(name)
+      }
+      if (!files.every(file => allowed(file.name))) return
       const sessionId = sessions.currentProvideInfo.getSnapshot()?.sessionId
       if (sessionId === undefined || sessionId === '') return
       event.preventDefault()

@@ -10,6 +10,7 @@ import { useRef, useState } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { isUploadableName, uploadAndSend } from './upload-shared.ts'
+import { ACCEPT_EXTENSIONS } from './upload-shared.ts'
 
 /** Injected face supplied by the plugin apply closure. */
 export interface UploadInjected {
@@ -17,19 +18,20 @@ export interface UploadInjected {
   api: IApiClient
   /** Bound translate for the `looklook` namespace. */
   t: TranslateNS<'looklook'>
-  /** Reactive zip-feature flag (gate the archive button). */
-  useZipEnabled: () => boolean
+  /** Reactive "more extensions" flag (governs the accept list). */
+  useMoreExtensions: () => boolean
   /** The current session id (injected by the slot owner). */
   sessionId: string
 }
 
-/** Accepted extensions (archives + video). */
-const ACCEPT = '.zip,.7z,.mp4,.mov,.avi,.mkv,.webm,.flv,.wmv,.m4v'
+/** Base accept list (always): .zip only. */
+const BASE_ACCEPT = '.zip'
 
 /** The upload button (rendered in the composer tool row). */
 export function UploadButton(props: UploadInjected) {
-  const { api, t, useZipEnabled, sessionId } = props
-  const zipEnabled = useZipEnabled()
+  const { api, t, useMoreExtensions, sessionId } = props
+  const moreExtensions = useMoreExtensions()
+  const accept = moreExtensions ? ACCEPT_EXTENSIONS.map(ext => ext.slice(1)).join(',') : BASE_ACCEPT
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -39,7 +41,10 @@ export function UploadButton(props: UploadInjected) {
     setBusy(true)
     setNotice(null)
     try {
-      if (!isUploadableName(file.name)) {
+      if (!moreExtensions && !file.name.toLowerCase().endsWith('.zip')) {
+        throw new Error(t('upload.unsupported'))
+      }
+      if (moreExtensions && !isUploadableName(file.name)) {
         throw new Error(t('upload.unsupported'))
       }
       const result = await uploadAndSend(api, sessionId, [file], (name, path) => t('upload.message', { name, path }))
@@ -58,7 +63,7 @@ export function UploadButton(props: UploadInjected) {
         type="button"
         title={t('upload.title')}
         aria-label={t('upload.title')}
-        disabled={busy || !zipEnabled}
+        disabled={busy}
         onClick={() => inputRef.current?.click()}
         style={{
           display: 'grid',
@@ -69,9 +74,9 @@ export function UploadButton(props: UploadInjected) {
           border: 'none',
           borderRadius: 999,
           background: 'transparent',
-          cursor: busy || !zipEnabled ? 'default' : 'pointer',
-          color: busy || !zipEnabled ? 'var(--dsw-alias-label-tertiary)' : 'var(--dsw-alias-label-secondary)',
-          opacity: busy || !zipEnabled ? 0.6 : 1,
+          cursor: busy ? 'default' : 'pointer',
+          color: busy ? 'var(--dsw-alias-label-tertiary)' : 'var(--dsw-alias-label-secondary)',
+          opacity: busy ? 0.6 : 1,
         }}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -82,7 +87,7 @@ export function UploadButton(props: UploadInjected) {
       <input
         ref={inputRef}
         type="file"
-        accept={ACCEPT}
+        accept={accept}
         multiple={false}
         style={{ display: 'none' }}
         onChange={event => void pick(event.target.files?.[0])}

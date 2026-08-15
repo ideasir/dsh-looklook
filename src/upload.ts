@@ -19,6 +19,8 @@ import { basename, extname, join, resolve } from 'node:path'
 import { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { LooklookScope } from './settings.ts'
+import { looklookFeatures } from './settings.ts'
 
 /** Upload cap: 500 MB for every file type. */
 export const MAX_UPLOAD_BYTES = 500 * 1024 * 1024
@@ -77,9 +79,16 @@ export function isVideoName(name: string): boolean {
   return (VIDEO_EXTENSIONS as readonly string[]).includes(extname(name).toLowerCase())
 }
 
-/** Whether the name is allowed by the upload channel at all. */
-export function isAllowedUploadName(name: string): boolean {
-  return isArchiveName(name) || isVideoName(name)
+/** The base extension set (always allowed): .zip only. */
+const BASE_EXTENSIONS = ['.zip'] as const
+
+/** Whether the name passes the extension whitelist for the given policy. */
+export function isAllowedUploadName(name: string, moreExtensions: boolean): boolean {
+  const ext = extname(name).toLowerCase()
+  if (moreExtensions) {
+    return isArchiveName(name) || isVideoName(name)
+  }
+  return (BASE_EXTENSIONS as readonly string[]).includes(ext)
 }
 
 // ── 7z helpers ──
@@ -118,7 +127,7 @@ export interface UploadRequest {
  * Register the upload + 7z routes on the webServer service.
  * @param ctx - host context (injects webServer + sessions).
  */
-export function registerUploadRoutes(ctx: Context): void {
+export function registerUploadRoutes(ctx: Context, features: LooklookScope): void {
   const webServer = ctx.get('webServer') as {
     register(route: { kind: 'exact' | 'prefix'; path: string; handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void> }): () => void
   }
@@ -137,9 +146,10 @@ export function registerUploadRoutes(ctx: Context): void {
         if (sessionId === '') throw new Error('missing sessionId')
         if (data === '') throw new Error('missing file data')
 
-        // Extension whitelist: archives + video only.
-        if (!isAllowedUploadName(name)) {
-          throw new Error(`unsupported file type "${extname(name)}"; only archives (.zip/.7z) and video are accepted`)
+        // Extension whitelist, governed by the `moreExtensions` switch:
+        // off = .zip only; on = archives (.zip/.7z) + video.
+        if (!isAllowedUploadName(name, looklookFeatures(features).moreExtensions)) {
+          throw new Error(`unsupported file type "${extname(name)}"; enable "支持更多扩展名" for .7z/video uploads`)
         }
 
         // Decode and enforce the 500 MB cap on the decoded bytes.

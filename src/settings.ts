@@ -59,13 +59,13 @@ export type VisionScope = SettingsScope<VisionSettings>
 export interface LooklookSettings {
   /** Master switch for the vision (multi-modal) feature. */
   multimodal: boolean
-  /** Whether the ZIP processing feature is enabled. */
-  zip: boolean
+  /** Whether the upload channel accepts the extended extension set. */
+  moreExtensions: boolean
 }
 
 export const LooklookConfig: Schema<LooklookSettings> = Schema.object({
   multimodal: Schema.boolean().default(true),
-  zip: Schema.boolean().default(true),
+  moreExtensions: Schema.boolean().default(true),
 })
 
 /** The settings owner handle for the feature toggles. */
@@ -76,7 +76,7 @@ export function looklookFeatures(scope: LooklookScope): LooklookSettings {
   const value = scope.get()
   return {
     multimodal: value.multimodal !== false,
-    zip: value.zip !== false,
+    moreExtensions: value.moreExtensions !== false,
   }
 }
 

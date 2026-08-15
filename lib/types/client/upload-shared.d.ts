@@ -5,6 +5,8 @@
  * every file path so the model can process them.
  */
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client';
+/** Accepted extensions (archives + video). */
+export declare const ACCEPT_EXTENSIONS: string[];
 /** Whether a file name is uploadable through the looklook channel. */
 export declare function isUploadableName(name: string): boolean;
 /** Convert a File's bytes to a base64 string (chunked to avoid stack blowups). */

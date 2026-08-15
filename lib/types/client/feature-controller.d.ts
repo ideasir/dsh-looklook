@@ -11,14 +11,14 @@ export type FeatureState = {
 } | {
     status: 'ready';
     multimodal: boolean;
-    zip: boolean;
+    moreExtensions: boolean;
 };
 /** Plugin feature controller: one store + load + update. */
 export interface FeatureController {
     store: SnapshotStore<FeatureState>;
     load(): void;
     setMultimodal(next: boolean): void;
-    setZip(next: boolean): void;
+    setMoreExtensions(next: boolean): void;
 }
 /** Create the plugin feature controller. */
 export declare function createFeatureController(api: IApiClient): FeatureController;

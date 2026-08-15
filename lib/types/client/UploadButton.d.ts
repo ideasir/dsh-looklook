@@ -13,8 +13,8 @@ export interface UploadInjected {
     api: IApiClient;
     /** Bound translate for the `looklook` namespace. */
     t: TranslateNS<'looklook'>;
-    /** Reactive zip-feature flag (gate the archive button). */
-    useZipEnabled: () => boolean;
+    /** Reactive "more extensions" flag (governs the accept list). */
+    useMoreExtensions: () => boolean;
     /** The current session id (injected by the slot owner). */
     sessionId: string;
 }

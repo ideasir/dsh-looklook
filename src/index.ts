@@ -140,9 +140,10 @@ export function apply(ctx: Context, config: VisionSettings): void {
     return { ...request, messages }
   })
 
-  // ZIP processing tool (vendored from dsh-zip), gated by the zip toggle.
-  registerZipTool(ctx, features)
+  // ZIP processing tool (vendored from dsh-zip), always available.
+  registerZipTool(ctx)
 
-  // Upload channel (archives + video) and the 7z install support routes.
-  registerUploadRoutes(ctx)
+  // Upload channel (archives + video, extension whitelist graded by the
+  // moreExtensions switch) and the 7z install support routes.
+  registerUploadRoutes(ctx, features)
 }

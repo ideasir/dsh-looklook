@@ -1,11 +1,9 @@
 /**
- * LooklookFeatures: the plugin master-switch settings section
- * (`settings.section`). Renders:
- * - 开启多模态 — master switch for the vision feature; when OFF the plugin is
- *   invisible to images (native DSH behavior) and the vision-model section is
- *   hidden.
- * - 开启 ZIP — master switch for the process_zip tool and archive uploads.
- * - 安装支持 — 7z CLI install button (host apt install, user-triggered).
+ * LooklookFeatures: the master-switch controls inside the looklook plugin
+ * card. Two slider-style switches:
+ * - 支持更多扩展名 — ON adds .7z / video to the upload whitelist (.zip stays);
+ * - 支持多模态 — ON enables image recognition and shows the vision config.
+ * Plus the 7z install support row.
  */
 
 import { useEffect, useState } from 'react'
@@ -21,59 +19,88 @@ export interface FeaturesInjected {
   api: IApiClient
   /** Bound translate for the `looklook` namespace. */
   t: TranslateNS<'looklook'>
-  /** Feature controller (multimodal / zip toggles). */
+  /** Feature controller (multimodal / moreExtensions toggles). */
   features: FeatureController
   /** Reactive snapshot of the feature switches. */
   useFeatures: () => FeatureState
 }
 
-const layout = {
-  section: { display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 720, color: 'var(--dsw-alias-label-primary)' },
-  title: { margin: 0, fontSize: 16, lineHeight: '24px', fontWeight: 500, color: 'var(--dsw-alias-label-primary)' },
-  intro: { margin: 0, fontSize: 14, lineHeight: '22px', color: 'var(--dsw-alias-label-tertiary)' },
-  hint: { margin: 0, fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' },
-  error: { margin: 0, fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-state-warn-label)' },
-  card: {
-    border: '1px solid var(--dsw-alias-border-l2)',
-    borderRadius: 12,
-    padding: '12px 14px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 10,
-  },
-  row: { display: 'flex', alignItems: 'center', gap: 12 },
+const css = {
+  stack: { display: 'flex', flexDirection: 'column', gap: 14, color: 'var(--dsw-alias-label-primary)' },
+  row: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 },
   rowText: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 },
   rowName: { fontSize: 14, lineHeight: '22px', fontWeight: 500, color: 'var(--dsw-alias-label-primary)' },
   rowDesc: { fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' },
+  divider: { border: 'none', borderTop: '1px solid var(--dsw-alias-border-l2)', margin: '4px 0' },
+  installRow: { display: 'flex', alignItems: 'center', gap: 10 },
+  hint: { margin: 0, fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' },
+  error: { margin: 0, fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-state-warn-label)' },
 } as const
 
-/** One switch row. */
-function SwitchRow({ label, desc, checked, onChange, t }: {
+/** Slider-style switch (track + knob). */
+function SliderSwitch({ checked, onChange, label }: {
+  checked: boolean
+  onChange: (next: boolean) => void
+  label: string
+}) {
+  const size = 40
+  const knob = size / 2 - 3
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      style={{
+        flex: 'none',
+        position: 'relative',
+        width: size,
+        height: size / 2 + 4,
+        borderRadius: 999,
+        border: 'none',
+        cursor: 'pointer',
+        padding: 0,
+        background: checked ? 'var(--dsw-alias-state-success-primary)' : 'var(--dsw-alias-border-l3)',
+        transition: 'background .14s ease-in-out',
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          top: 2,
+          left: checked ? size - knob - 2 : 2,
+          width: knob,
+          height: knob,
+          borderRadius: 999,
+          background: '#fff',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
+          transition: 'left .14s ease-in-out',
+        }}
+      />
+    </button>
+  )
+}
+
+/** One switch row (label + description left, slider right). */
+function SwitchRow({ label, desc, checked, onChange }: {
   label: string
   desc: string
   checked: boolean
   onChange: (next: boolean) => void
-  t: TranslateNS<'looklook'>
 }) {
   return (
-    <div style={layout.row}>
-      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, cursor: 'pointer', minWidth: 0 }}>
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={event => onChange(event.target.checked)}
-          style={{ flex: 'none' }}
-        />
-        <span style={layout.rowText}>
-          <span style={layout.rowName}>{label}</span>
-          <span style={layout.rowDesc}>{desc}</span>
-        </span>
-      </label>
+    <div style={css.row}>
+      <span style={css.rowText}>
+        <span style={css.rowName}>{label}</span>
+        <span style={css.rowDesc}>{desc}</span>
+      </span>
+      <SliderSwitch checked={checked} onChange={onChange} label={label} />
     </div>
   )
 }
 
-/** The plugin settings section body. */
+/** The master-switch + install-support body. */
 export function LooklookFeaturesSection(props: FeaturesInjected) {
   const { t, features, useFeatures } = props
   const state = useFeatures()
@@ -90,70 +117,64 @@ export function LooklookFeaturesSection(props: FeaturesInjected) {
   }
 
   useEffect(() => {
-    features.load()
     void refreshSevenZ()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [features])
+  }, [])
 
   const ready = state.status === 'ready'
 
   return (
-    <div style={layout.section}>
-      <h2 style={layout.title}>{t('features.nav')}</h2>
-      <p style={layout.intro}>{t('features.intro')}</p>
+    <div style={css.stack}>
+      <SwitchRow
+        label={t('features.extensions.label')}
+        desc={t('features.extensions.desc')}
+        checked={ready && state.moreExtensions}
+        onChange={next => features.setMoreExtensions(next)}
+      />
+      <SwitchRow
+        label={t('features.multimodal.label')}
+        desc={t('features.multimodal.desc')}
+        checked={ready && state.multimodal}
+        onChange={next => features.setMultimodal(next)}
+      />
 
-      <div style={layout.card}>
-        <SwitchRow
-          label={t('features.multimodal.label')}
-          desc={t('features.multimodal.desc')}
-          checked={ready && state.multimodal}
-          onChange={next => features.setMultimodal(next)}
-          t={t}
-        />
-        <SwitchRow
-          label={t('features.zip.label')}
-          desc={t('features.zip.desc')}
-          checked={ready && state.zip}
-          onChange={next => features.setZip(next)}
-          t={t}
-        />
-      </div>
+      <hr style={css.divider} />
 
-      <div style={layout.card}>
-        <div style={layout.rowName}>{t('features.install.header')}</div>
-        <div style={layout.rowDesc}>{t('features.install.desc')}</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={sevenZ.status === 'checking' || sevenZ.status === 'installing'}
-            onClick={() => {
-              if (sevenZ.status === 'ready' && sevenZ.installed) return
-              void (async () => {
-                setSevenZ({ status: 'installing' })
-                try {
-                  const result = await requestSevenZInstall()
-                  setSevenZ({ status: 'ready', installed: result.installed })
-                } catch (error) {
-                  setSevenZ({ status: 'error', message: error instanceof Error ? error.message : String(error) })
-                }
-              })()
-            }}
-          >
-            {sevenZ.status === 'ready' && sevenZ.installed
-              ? t('features.install.installed')
-              : sevenZ.status === 'installing'
-                ? t('features.install.installing')
-                : sevenZ.status === 'checking'
-                  ? t('features.install.checking')
-                  : t('features.install.button')}
-          </Button>
-          {sevenZ.status === 'error' && <span style={layout.error}>{sevenZ.message}</span>}
-        </div>
-        {sevenZ.status === 'ready' && !sevenZ.installed && (
-          <span style={layout.hint}>{t('features.install.missingHint')}</span>
-        )}
+      <div style={css.installRow}>
+        <span style={css.rowText}>
+          <span style={css.rowName}>{t('features.install.header')}</span>
+          <span style={css.rowDesc}>{t('features.install.desc')}</span>
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={sevenZ.status === 'checking' || sevenZ.status === 'installing'}
+          onClick={() => {
+            if (sevenZ.status === 'ready' && sevenZ.installed) return
+            void (async () => {
+              setSevenZ({ status: 'installing' })
+              try {
+                const result = await requestSevenZInstall()
+                setSevenZ({ status: 'ready', installed: result.installed })
+              } catch (error) {
+                setSevenZ({ status: 'error', message: error instanceof Error ? error.message : String(error) })
+              }
+            })()
+          }}
+        >
+          {sevenZ.status === 'ready' && sevenZ.installed
+            ? t('features.install.installed')
+            : sevenZ.status === 'installing'
+              ? t('features.install.installing')
+              : sevenZ.status === 'checking'
+                ? t('features.install.checking')
+                : t('features.install.button')}
+        </Button>
       </div>
+      {sevenZ.status === 'error' && <span style={css.error}>{sevenZ.message}</span>}
+      {sevenZ.status === 'ready' && !sevenZ.installed && (
+        <span style={css.hint}>{t('features.install.missingHint')}</span>
+      )}
     </div>
   )
 }
