@@ -80,13 +80,18 @@ export function apply(ctx: ClientContext): void {
     const originalSubmit = actions.submit.bind(actions)
     const setDraft = actions.setDraft
     wrapped.submit = () => {
-      const staged = pending.get(sessionId)
-      if (staged.length > 0) {
-        const notes = staged.map(f => t('upload.message', { name: f.name, path: f.path })).join('\n')
-        const inputState = current?.hooks?.input as { getSnapshot(): { draft?: string } } | undefined
-        const draft = inputState?.getSnapshot()?.draft ?? ''
-        setDraft(draft === '' ? notes : `${draft}\n${notes}`)
-        pending.clear(sessionId)
+      try {
+        const staged = pending.get(sessionId)
+        if (staged.length > 0) {
+          const notes = staged.map(f => t('upload.message', { name: f.name, path: f.path })).join('\n')
+          const inputState = current?.hooks?.input as { getSnapshot(): { draft?: string } } | undefined
+          const draft = inputState?.getSnapshot()?.draft ?? ''
+          setDraft(draft === '' ? notes : `${draft}\n${notes}`)
+          pending.clear(sessionId)
+        }
+      } catch (error) {
+        // Never let the merge break sending — the original submit must run.
+        console.error('looklook submit merge failed:', error)
       }
       originalSubmit()
     }

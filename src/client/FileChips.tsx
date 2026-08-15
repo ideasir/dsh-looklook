@@ -29,7 +29,9 @@ function formatSize(bytes: number): string {
 /** One chip card (hover reveals the remove ×). */
 export function FileChips(props: FileChipsInjected) {
   const { t, pending, usePending, sessionId } = props
-  const files = usePending((state: PendingFilesState) => state[sessionId] ?? []) as
+  // Selector returns the stable stored array (or undefined) — never allocate
+  // a fresh value, or the reactive hook re-renders forever.
+  const files = usePending((state: PendingFilesState) => state[sessionId]) as
     | ReturnType<PendingFilesController['get']>
     | undefined
   const list = files ?? []
