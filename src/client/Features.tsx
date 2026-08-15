@@ -37,14 +37,17 @@ const css = {
   error: { margin: 0, fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-state-warn-label)' },
 } as const
 
-/** Slider-style switch (track + knob), smooth spring motion. */
+/** Slider-style switch (track + knob), smooth spring motion, perfectly centered knob. */
 function SliderSwitch({ checked, onChange, label }: {
   checked: boolean
   onChange: (next: boolean) => void
   label: string
 }) {
-  const size = 40
-  const knob = size / 2 - 3
+  const trackW = 44
+  const trackH = 24
+  const knob = 18
+  const pad = 3
+  const knobTop = (trackH - knob) / 2
   return (
     <button
       type="button"
@@ -55,8 +58,8 @@ function SliderSwitch({ checked, onChange, label }: {
       style={{
         flex: 'none',
         position: 'relative',
-        width: size,
-        height: size / 2 + 4,
+        width: trackW,
+        height: trackH,
         borderRadius: 999,
         border: 'none',
         cursor: 'pointer',
@@ -69,8 +72,8 @@ function SliderSwitch({ checked, onChange, label }: {
       <span
         style={{
           position: 'absolute',
-          top: 2,
-          left: checked ? size - knob - 2 : 2,
+          top: knobTop,
+          left: checked ? trackW - knob - pad : pad,
           width: knob,
           height: knob,
           borderRadius: 999,
