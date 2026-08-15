@@ -60,6 +60,7 @@ export function apply(ctx: ClientContext): void {
       hooks?: Record<string, unknown>
       props?: Record<string, unknown>
     } | undefined; subscribe(fn: () => void): () => void }
+    scope?(id: string): { get?(name: string): unknown } | undefined
   }
 
   // Pending staged files (uploaded, waiting for the user to press Enter).
@@ -107,7 +108,10 @@ export function apply(ctx: ClientContext): void {
     const current = sessions.currentProvideInfo.getSnapshot()
     const sessionId = current?.sessionId
     if (sessionId === undefined) return false
-    const conversation = ctx.get('conversation') as {
+    // The conversation service is SESSION-scoped: resolve it through the
+    // session scope (the same path the built-in queue dock uses).
+    const actx = sessions.scope ? (sessions as { scope?: (id: string) => { get?(n: string): unknown } | undefined }).scope?.(sessionId) : undefined
+    const conversation = actx?.get?.('conversation') as {
       input?: { shell?: (id: string) => {
         state?: { getSnapshot(): { draft?: string } }
         setDraft?: (text: string) => void
