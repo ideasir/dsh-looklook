@@ -216,7 +216,13 @@ export function VisionSettingsSection(props: VisionSettingsInjected) {
       if (result.ok) {
         setFetchedModels(current => ({ ...current, [draft.id]: result.models }))
       } else {
-        setFetchError(result.error)
+        // RPC-level failures arrive as { code, message, details } objects, and
+        // React cannot render an object as a child — always render a string.
+        setFetchError(
+          typeof result.error === 'string'
+            ? result.error
+            : result.error?.message ?? JSON.stringify(result.error),
+        )
       }
     } catch (error) {
       setFetchError(error instanceof Error ? error.message : String(error))
