@@ -119,7 +119,9 @@ export function apply(ctx: ClientContext): void {
     return () => { void mounting.then(dispose => dispose()) }
   }, 'dsh-looklook: model-discovery remote')
 
-  /** Call the host discovery RPC once the namespace is mounted. */
+  /** Call the host discovery RPC once the namespace is mounted. The remote
+   * method resolves to the wire envelope `{ ok, value }` (value is the
+   * business result), so unwrap it to the shape the settings page consumes. */
   const listModels = async (provider: {
     baseURL: string
     apiKeyEnv: string
@@ -130,10 +132,26 @@ export function apply(ctx: ClientContext): void {
         baseURL: string
         apiKeyEnv: string
         apiKey?: string
-      }) => Promise<{ ok: true; models: string[] } | { ok: false; error: string }>
+      }) => Promise<{ ok: boolean; value?: { ok: boolean; models?: string[]; error?: string }; error?: { message?: string } }>
     } | undefined
     if (remote?.listModels === undefined) return { ok: false, error: '模型服务未就绪' }
-    return remote.listModels(provider)
+    const envelope = await remote.listModels(provider)
+    if (!envelope.ok) {
+      return {
+        ok: false,
+        error: typeof envelope.error === 'string'
+          ? envelope.error
+          : envelope.error?.message ?? '模型服务请求失败',
+      }
+    }
+    const business = envelope.value
+    if (business?.ok === true) {
+      return { ok: true, models: business.models ?? [] }
+    }
+    return {
+      ok: false,
+      error: typeof business?.error === 'string' ? business.error : '获取模型失败',
+    }
   }
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({
