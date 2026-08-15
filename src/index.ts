@@ -21,6 +21,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { contentHasImage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
+import type { SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session/types'
 import { Config, eyeStateFor, type VisionSettings, type VisionScope } from './settings.ts'
 import { replaceImagesWithPlaceholder, translateImages } from './translate.ts'
@@ -59,10 +60,55 @@ export function apply(ctx: Context, config: VisionSettings): void {
   // Host receiver for the client's model-discovery RPC (settings page).
   ctx.plugin(LooklookRemoteService)
 
+  // rc.6 admission override: the api-proxy's hardcoded text-only refusal
+  // consults this optional service (patched into dsh-host-apiproxy). This
+  // plugin services images downstream (translation or the placeholder), so
+  // the answer is always "allow" while mounted.
+  ctx.provide('imageAdmission', {
+    decide: () => 'allow' as const,
+  })
+
   // The gateway asks before admitting an image while the selected model is
   // text-only. This plugin services the image downstream (translation or the
   // placeholder), so the answer is always "allow" while mounted.
   ctx.on('prompt/image-admission', () => 'allow')
+
+  // rc.6 request rewriting: `agent/request-messages` and `llm/stream`'s
+  // argument are both frozen in this release — `llm/stream` cannot replace the
+  // request and the session log is built from `agent/pre-step`'s decision.
+  // Rewriting here is the only seam that changes what a text-only model sees
+  // (the log then carries the rewritten text instead of the raw image; newer
+  // harnesses restore the request-only rewrite via agent/request-messages).
+  ctx.on('agent/pre-step', async ({ agent, messages, signal }, next) => {
+    if (!messages.some(message => contentHasImage(message.content))) return next()
+    const decision = await next()
+    if (decision.kind !== 'enter') return decision
+    const sessionId = String(agent.session.id) as SessionId
+    const eye = eyeStateFor(scope, sessionId)
+    if (eye === 'off') {
+      // Eye off: strip images to the placeholder; the model sees text only.
+      return {
+        ...decision,
+        messages: replaceImagesWithPlaceholder(decision.messages) as UserMessage[],
+      }
+    }
+    // Eye on: use the conversation model's own multimodal capability when it
+    // declares image input; unknown capability passes through untouched so a
+    // multimodal model is never degraded by this plugin.
+    const info = await ctx.llm.resolveModelInfo(agent.options.provider ?? '', agent.options.model ?? '', signal)
+    if (info.inputModalities === undefined || info.inputModalities.includes('image')) {
+      return decision
+    }
+    // Eye on + text-only model: describe images via the vision provider.
+    const rewritten = await translateImages(
+      ctx,
+      decision.messages,
+      sessionId,
+      scope,
+      signal,
+    )
+    return { ...decision, messages: rewritten as UserMessage[] }
+  })
 
   ctx.on('agent/request-messages', async (_payload, request, next) => {
     if (!requestHasImage(request)) return next()
