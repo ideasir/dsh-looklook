@@ -23,7 +23,7 @@ import { LooklookUserMessageNodeView } from './UserMessageNodeView.tsx'
 import { LooklookPluginCard, type LooklookCardInjected } from './PluginTab.tsx'
 import { VisionToggle, type VisionToggleInjected } from './VisionToggle.tsx'
 import { FileChips, type FileChipsInjected } from './FileChips.tsx'
-import { isUploadableName, uploadFiles } from './upload-shared.ts'
+import { isUploadableName, uploadFile } from './upload-shared.ts'
 import { en, zh, type LookLookKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -259,9 +259,10 @@ export function apply(ctx: ClientContext): void {
       void (async () => {
         const results = await Promise.all(files.map(async (file) => {
           try {
-            const { path } = await import('./upload-shared.ts').then(m => m.uploadFile(sessionId, file))
+            const { path } = await uploadFile(sessionId, file)
             return { name: file.name, path, size: file.size }
-          } catch {
+          } catch (error) {
+            console.error('looklook upload failed:', file.name, error)
             return null
           }
         }))
