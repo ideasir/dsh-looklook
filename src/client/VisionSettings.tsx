@@ -156,12 +156,27 @@ export function VisionSettingsSection(props: VisionSettingsInjected) {
   const [fetching, setFetching] = useState<string | null>(null)
   const [fetchedModels, setFetchedModels] = useState<Record<string, string[]>>({})
   const [fetchError, setFetchError] = useState<string | null>(null)
+  // Provider id → whether a credential is actually stored (keys never live in
+  // the settings namespace, so the editor must ask the credentials service).
+  const [keyStates, setKeyStates] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     void (async () => {
       const response = await api.settings.describe({})
       if (response.result.ok) {
-        setProviders(visionProvidersOf(response.result.value.namespaces))
+        const loaded = visionProvidersOf(response.result.value.namespaces)
+        setProviders(loaded)
+        const refs = loaded.map(provider => credentialRefFor(provider.id))
+        if (refs.length > 0) {
+          const cred = await api.credentials.describe({ refs })
+          if (cred.result.ok) {
+            const next: Record<string, boolean> = {}
+            for (const provider of loaded) {
+              next[provider.id] = cred.result.value.credentials[credentialRefFor(provider.id)]?.configured === true
+            }
+            setKeyStates(next)
+          }
+        }
       }
       setLoaded(true)
     })()
@@ -202,13 +217,13 @@ export function VisionSettingsSection(props: VisionSettingsInjected) {
 
   /** Probe the provider's `/models` endpoint with its stored API key. */
   const fetchModels = async (draft: ProviderDraft): Promise<void> => {
-    if (draft.baseURL.trim() === '') {
-      setFetchError(t('settings.provider.baseURLRequired'))
-      return
-    }
-    setFetching(draft.id)
     setFetchError(null)
+    setFetching(draft.id)
     try {
+      if (typeof draft.baseURL !== 'string' || draft.baseURL.trim() === '') {
+        setFetchError(t('settings.provider.baseURLRequired'))
+        return
+      }
       const result = await listModels({
         baseURL: draft.baseURL,
         apiKeyEnv: credentialRefFor(draft.id),
@@ -254,6 +269,22 @@ export function VisionSettingsSection(props: VisionSettingsInjected) {
         },
       })
       if (!update.result.ok) throw new Error(update.result.error.message)
+      // Commit to the local list immediately so the saved provider shows up
+      // without a page reload; record which keys are now stored.
+      setProviders(nextProviders.map(provider => ({
+        id: provider.id,
+        name: provider.name,
+        baseURL: provider.baseURL,
+        model: provider.model,
+        enabled: provider.enabled,
+      })))
+      if (freshKeys.length > 0) {
+        setKeyStates(current => {
+          const next = { ...current }
+          for (const provider of freshKeys) next[provider.id] = true
+          return next
+        })
+      }
       setNotice({ kind: 'saved', text: t('settings.saved') })
       closeEditor()
     } catch (error) {
@@ -307,6 +338,9 @@ export function VisionSettingsSection(props: VisionSettingsInjected) {
             <option key={model} value={model} />
           ))}
         </datalist>
+        {(fetchedModels[draft.id] ?? []).length > 0 && (
+          <span style={layout.hint}>{t('settings.provider.modelsFetched')}</span>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Button
             variant="outline" size="sm"
@@ -323,7 +357,8 @@ export function VisionSettingsSection(props: VisionSettingsInjected) {
         <input
           style={layout.input}
           type="password" autoComplete="off"
-          value={draft.apiKey ?? ''} placeholder={t('settings.provider.apiKeyUnset')}
+          value={draft.apiKey ?? ''}
+          placeholder={keyStates[draft.id] ? t('settings.provider.apiKeyConfigured') : t('settings.provider.apiKeyUnset')}
           onChange={event => onPatch({ apiKey: event.target.value })}
         />
       </div>
@@ -360,7 +395,7 @@ export function VisionSettingsSection(props: VisionSettingsInjected) {
                 : <span style={layout.rowTag}>{t('settings.provider.fallback')}</span>}
             </span>
             <span style={layout.rowActions}>
-              <StateDot state={provider.apiKey !== undefined && provider.apiKey.length > 0 ? 'done' : 'warning'} />
+              <StateDot state={keyStates[provider.id] ? 'done' : 'warning'} />
               <Button
                 variant="ghost" size="sm" aria-label={t('settings.provider.moveUp')}
                 disabled={provider.id === providers[0]?.id}
