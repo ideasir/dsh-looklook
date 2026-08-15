@@ -1,6 +1,7 @@
 /**
- * LooklookPluginTab: the looklook entry inside the Plugins settings section
- * (`settings.plugins.tab`). One tab = one plugin setting:
+ * LooklookPluginCard: the looklook configuration card inside the Plugins
+ * settings section's "插件配置" tab (`settings.plugin.item`). One card =
+ * one plugin setting:
  * - the master switches (多模态 / ZIP) and the 7z install support;
  * - the vision-model configuration, visible while 多模态 is ON.
  */
@@ -9,7 +10,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots';
 import type { FeatureController } from './feature-controller.ts';
 import { type VisionSettingsInjected } from './VisionSettings.tsx';
 /** Injected face supplied by the plugin apply closure. */
-export interface LooklookTabInjected {
+export interface LooklookCardInjected {
     /** The wire API client. */
     api: IApiClient;
     /** Bound translate for the `looklook` namespace. */
@@ -21,5 +22,5 @@ export interface LooklookTabInjected {
     /** Reactive snapshot of the `multimodal` master switch. */
     useMultimodal: () => boolean;
 }
-/** The Plugins-settings tab body. */
-export declare function LooklookPluginTab(props: LooklookTabInjected): import("react").JSX.Element;
+/** The plugin-configuration card body. */
+export declare function LooklookPluginCard(props: LooklookCardInjected): import("react").JSX.Element;

@@ -12,13 +12,14 @@ import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
 // Type-only: pulls the shell's SlotMap merges (settings.plugins.tab,
 // conversation.input.left) and the locale/remote Context merges.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createEyeController, type EyeController } from './eye-controller.ts'
 import { createFeatureController, type FeatureController } from './feature-controller.ts'
 import { LooklookUserMessageNodeView } from './UserMessageNodeView.tsx'
-import { LooklookPluginTab, type LooklookTabInjected } from './PluginTab.tsx'
+import { LooklookPluginCard, type LooklookCardInjected } from './PluginTab.tsx'
 import { VisionToggle, type VisionToggleInjected } from './VisionToggle.tsx'
 import { UploadButton, type UploadInjected } from './UploadButton.tsx'
 import { isUploadableName, uploadAndSend } from './upload-shared.ts'
@@ -35,7 +36,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'looklook'
 
 /** Slot entry ids. */
-const PLUGIN_TAB_ID = 'looklook'
+const PLUGIN_CARD_ID = 'looklook'
 const TOGGLE_ID = 'looklook-eye'
 const UPLOAD_ID = 'looklook-upload'
 
@@ -170,15 +171,13 @@ export function apply(ctx: ClientContext): void {
     }
   }
 
-  // ── Plugins settings: the looklook tab (master switches + 7z + vision). ──
-  ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
-    name: 'settings.plugins.tab',
-    id: PLUGIN_TAB_ID,
+  // ── Plugins settings → 插件配置: the looklook card (switches + 7z + vision). ──
+  ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
+    name: 'settings.plugin.item',
+    id: PLUGIN_CARD_ID,
     order: 30,
-    label: () => t('plugins.tabLabel'),
-    locale: NS,
-    inject: (): LooklookTabInjected => ({ api: connection.api, t, features, listModels, useMultimodal }),
-  }, LooklookPluginTab))
+    inject: (): LooklookCardInjected => ({ api: connection.api, t, features, listModels, useMultimodal }),
+  }, LooklookPluginCard))
 
   // Composer upload control (archives + video), gated by the zip toggle.
   ctx.slots.inject('conversation.input.left', () => ctx.slots.register({

@@ -1,6 +1,7 @@
 /**
- * LooklookPluginTab: the looklook entry inside the Plugins settings section
- * (`settings.plugins.tab`). One tab = one plugin setting:
+ * LooklookPluginCard: the looklook configuration card inside the Plugins
+ * settings section's "插件配置" tab (`settings.plugin.item`). One card =
+ * one plugin setting:
  * - the master switches (多模态 / ZIP) and the 7z install support;
  * - the vision-model configuration, visible while 多模态 is ON.
  */
@@ -12,7 +13,7 @@ import { LooklookFeaturesSection, type FeaturesInjected } from './Features.tsx'
 import { VisionSettingsSection, type VisionSettingsInjected } from './VisionSettings.tsx'
 
 /** Injected face supplied by the plugin apply closure. */
-export interface LooklookTabInjected {
+export interface LooklookCardInjected {
   /** The wire API client. */
   api: IApiClient
   /** Bound translate for the `looklook` namespace. */
@@ -25,8 +26,8 @@ export interface LooklookTabInjected {
   useMultimodal: () => boolean
 }
 
-/** The Plugins-settings tab body. */
-export function LooklookPluginTab(props: LooklookTabInjected) {
+/** The plugin-configuration card body. */
+export function LooklookPluginCard(props: LooklookCardInjected) {
   const { api, t, features, listModels, useMultimodal } = props
   const featuresProps: FeaturesInjected = { api, t, features }
   const visionProps: VisionSettingsInjected = { api, t, listModels, useMultimodal }
