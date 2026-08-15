@@ -9,6 +9,7 @@
 import { useRef, useState } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import { isUploadableName, uploadAndSend } from './upload-shared.ts'
 
 /** Injected face supplied by the plugin apply closure. */
 export interface UploadInjected {
@@ -25,17 +26,6 @@ export interface UploadInjected {
 /** Accepted extensions (archives + video). */
 const ACCEPT = '.zip,.7z,.mp4,.mov,.avi,.mkv,.webm,.flv,.wmv,.m4v'
 
-/** Convert a File's bytes to a base64 string (chunked to avoid stack blowups). */
-async function fileToBase64(file: File): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  let binary = ''
-  const chunk = 0x8000
-  for (let offset = 0; offset < bytes.length; offset += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk))
-  }
-  return btoa(binary)
-}
-
 /** The upload button (rendered in the composer tool row). */
 export function UploadButton(props: UploadInjected) {
   const { api, t, useZipEnabled, sessionId } = props
@@ -49,24 +39,11 @@ export function UploadButton(props: UploadInjected) {
     setBusy(true)
     setNotice(null)
     try {
-      const data = await fileToBase64(file)
-      const response = await fetch('/api/looklook-upload', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sessionId, name: file.name, data }),
-      })
-      const body = await response.json() as { ok?: boolean; path?: string; error?: string }
-      if (body.ok !== true || body.path === undefined) {
-        throw new Error(body.error ?? `上传失败（HTTP ${response.status}）`)
+      if (!isUploadableName(file.name)) {
+        throw new Error(t('upload.unsupported'))
       }
-      // Send a normal user message carrying the file path (the model then
-      // processes the file with process_zip / fs / bash).
-      const sent = await api.sessions.prompt({
-        sessionId: sessionId as never,
-        mode: 'queue' as never,
-        content: [{ type: 'text', text: t('upload.message', { name: file.name, path: body.path }) }] as never,
-      } as never)
-      if (!sent.result.ok) throw new Error(sent.result.error.message)
+      const result = await uploadAndSend(api, sessionId, [file], (name, path) => t('upload.message', { name, path }))
+      if (result.ok === 0) throw new Error(t('upload.failed'))
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error))
     } finally {

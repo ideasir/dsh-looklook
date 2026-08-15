@@ -33,6 +33,7 @@ export declare const zh: {
     'eye.on': string;
     'eye.off': string;
     'eye.unconfigured': string;
+    'plugins.tabLabel': string;
     'features.nav': string;
     'features.intro': string;
     'features.multimodal.label': string;
@@ -47,6 +48,8 @@ export declare const zh: {
     'features.install.checking': string;
     'features.install.missingHint': string;
     'upload.title': string;
+    'upload.unsupported': string;
+    'upload.failed': string;
     'upload.uploading': string;
     'upload.message': string;
     'vision.disabled': string;
@@ -87,6 +90,7 @@ export declare const en: {
     'eye.on': string;
     'eye.off': string;
     'eye.unconfigured': string;
+    'plugins.tabLabel': string;
     'features.nav': string;
     'features.intro': string;
     'features.multimodal.label': string;
@@ -101,6 +105,8 @@ export declare const en: {
     'features.install.checking': string;
     'features.install.missingHint': string;
     'upload.title': string;
+    'upload.unsupported': string;
+    'upload.failed': string;
     'upload.uploading': string;
     'upload.message': string;
     'vision.disabled': string;

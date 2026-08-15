@@ -1,16 +1,15 @@
 /**
- * dsh-looklook client face: the "Look Look 功能" master-switch settings
- * section, the (conditionally visible) "视觉模型" settings section, the
- * per-session eye toggle, and the composer "上传文件" control.
- *
- * All settings go through the existing wire settings API (no new RPCs); the
- * host face (src/index.ts) consumes the same namespaces at request time.
+ * dsh-looklook client face:
+ * - the looklook entry inside the Plugins settings section (master switches +
+ *   7z install + conditional vision-model config);
+ * - the composer "上传文件" control and drag-and-drop of archive/video files;
+ * - the per-session eye toggle and the original-image message view.
  */
 
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
-// Type-only: pulls the shell's SlotMap merges (settings.section,
+// Type-only: pulls the shell's SlotMap merges (settings.plugins.tab,
 // conversation.input.left) and the locale/remote Context merges.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -19,10 +18,10 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createEyeController, type EyeController } from './eye-controller.ts'
 import { createFeatureController, type FeatureController } from './feature-controller.ts'
 import { LooklookUserMessageNodeView } from './UserMessageNodeView.tsx'
-import { LooklookFeaturesSection, type FeaturesInjected } from './Features.tsx'
-import { VisionSettingsSection, type VisionSettingsInjected } from './VisionSettings.tsx'
+import { LooklookPluginTab, type LooklookTabInjected } from './PluginTab.tsx'
 import { VisionToggle, type VisionToggleInjected } from './VisionToggle.tsx'
 import { UploadButton, type UploadInjected } from './UploadButton.tsx'
+import { isUploadableName, uploadAndSend } from './upload-shared.ts'
 import { en, zh, type LookLookKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -35,24 +34,26 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Dictionary namespace owned by this plugin. */
 const NS = 'looklook'
 
-/** Settings section ids and slot entry ids. */
-const FEATURES_ID = 'looklook'
-const VISION_ID = 'looklook-vision'
+/** Slot entry ids. */
+const PLUGIN_TAB_ID = 'looklook'
 const TOGGLE_ID = 'looklook-eye'
 const UPLOAD_ID = 'looklook-upload'
 
-/** Required services: slots (registration), locale (copy), connection (wire API), remote (pushed invalidations), sessions (per-session scoping). */
+/** Required services: slots, locale, connection, remote, sessions. */
 export const inject = ['slots', 'locale', 'connection', 'remote', 'sessions']
 
 /**
- * Client plugin body: register the master-switch settings section, the
- * (multimodal-gated) vision settings section, the composer eye toggle, and
- * the composer upload control.
+ * Client plugin body: register the looklook Plugins-settings tab, the
+ * composer upload control, drag-and-drop of archive/video files, the eye
+ * toggle, and the original-image message view.
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-looklook: dictionaries')
   const t = ctx.locale.bind(NS)
   const connection = ctx.get('connection') as ConnectionHandle
+  const sessions = ctx.get('sessions') as {
+    currentProvideInfo: { getSnapshot(): { sessionId?: string } | undefined }
+  }
 
   const eyes = new Map<string, EyeController>()
   const eyeFor = (sessionId: string): EyeController => {
@@ -169,23 +170,15 @@ export function apply(ctx: ClientContext): void {
     }
   }
 
-  // Master-switch settings section (feature toggles + 7z install support).
-  ctx.slots.inject('settings.section', () => ctx.slots.register({
-    name: 'settings.section',
-    id: FEATURES_ID,
-    order: 11,
-    label: () => t('features.nav'),
-    inject: (): FeaturesInjected => ({ api: connection.api, t, features }),
-  }, LooklookFeaturesSection))
-
-  // Vision-model settings section, visible only while multimodal is ON.
-  ctx.slots.inject('settings.section', () => ctx.slots.register({
-    name: 'settings.section',
-    id: VISION_ID,
-    order: 12,
-    label: () => t('settings.nav'),
-    inject: (): VisionSettingsInjected => ({ api: connection.api, t, listModels, useMultimodal }),
-  }, VisionSettingsSection))
+  // ── Plugins settings: the looklook tab (master switches + 7z + vision). ──
+  ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
+    name: 'settings.plugins.tab',
+    id: PLUGIN_TAB_ID,
+    order: 30,
+    label: () => t('plugins.tabLabel'),
+    locale: NS,
+    inject: (): LooklookTabInjected => ({ api: connection.api, t, features, listModels, useMultimodal }),
+  }, LooklookPluginTab))
 
   // Composer upload control (archives + video), gated by the zip toggle.
   ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
@@ -193,6 +186,37 @@ export function apply(ctx: ClientContext): void {
     id: UPLOAD_ID,
     inject: (sessionId: string): UploadInjected => ({ api: connection.api, t, useZipEnabled, sessionId }),
   }, UploadButton))
+
+  // Drag-and-drop of archive/video files onto the page: intercept in the
+  // CAPTURE phase (before the built-in image-only drop handler in bubble
+  // phase), upload through the looklook route, and send the file paths as a
+  // user message. Image-only drops and mixed drops pass through untouched so
+  // the native image pipeline keeps working.
+  ctx.effect(() => {
+    const onDragOverCapture = (event: DragEvent): void => {
+      if (event.dataTransfer?.types.includes('Files') === true) {
+        event.preventDefault()
+      }
+    }
+    const onDropCapture = (event: DragEvent): void => {
+      const files = [...(event.dataTransfer?.files ?? [])]
+      if (files.length === 0) return
+      // Intercept only when EVERY dropped file is an archive/video; otherwise
+      // let the built-in handler deal with the drop (images stay native).
+      if (!files.every(file => isUploadableName(file.name))) return
+      const sessionId = sessions.currentProvideInfo.getSnapshot()?.sessionId
+      if (sessionId === undefined || sessionId === '') return
+      event.preventDefault()
+      event.stopPropagation()
+      void uploadAndSend(connection.api, sessionId, files, (name, path) => t('upload.message', { name, path }))
+    }
+    document.addEventListener('dragover', onDragOverCapture, true)
+    document.addEventListener('drop', onDropCapture, true)
+    return () => {
+      document.removeEventListener('dragover', onDragOverCapture, true)
+      document.removeEventListener('drop', onDropCapture, true)
+    }
+  }, 'dsh-looklook: archive/video drag-and-drop')
 
   // Per-session eye toggle.
   ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
@@ -208,10 +232,7 @@ export function apply(ctx: ClientContext): void {
     },
   }, VisionToggle))
 
-  // Render the ORIGINAL image in user messages: the host embeds an attachment
-  // marker in the recognition text (rc.6 record), and this view scans for it,
-  // loads the image via the conversation's loadImage, and draws it above the
-  // text. Priority -1 shadows the built-in user bubble.
+  // Render the ORIGINAL image in user messages.
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
     key: 'user',
