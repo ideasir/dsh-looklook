@@ -80,15 +80,32 @@ export function apply(ctx: ClientContext): void {
     if (staged.length === 0) return
     setSendState(sessionId, { sending: true, error: null })
     try {
-      const text = staged.map(f => {
+      const notes = staged.map(f => {
         const visible = t('upload.message', { name: f.name, path: f.path })
         const meta = JSON.stringify({ name: f.name, path: f.path, size: f.size })
         return `【looklook:开始】${visible}【looklook:结束】\n【looklook:file】${meta}【looklook:file】`
       }).join('\n')
+      // 1) Prefer merging into the current draft (keeps the user's question)
+      //    and submitting through the normal input actions.
+      const current = sessions.currentProvideInfo.getSnapshot()
+      const inputActions = current?.props?.inputActions as {
+        setDraft?: (text: string) => void
+        submit?: () => void
+      } | undefined
+      const inputState = current?.hooks?.input as { getSnapshot(): { draft?: string } } | undefined
+      if (inputActions?.setDraft !== undefined && inputActions?.submit !== undefined) {
+        const draft = inputState?.getSnapshot()?.draft ?? ''
+        inputActions.setDraft(draft === '' ? notes : `${draft}\n${notes}`)
+        inputActions.submit()
+        pending.clear(sessionId)
+        setSendState(sessionId, { sending: false, error: null })
+        return
+      }
+      // 2) Fallback: direct prompt with the file notes.
       const sent = await connection.api.sessions.prompt({
         sessionId: sessionId as never,
         mode: 'queue' as never,
-        content: [{ type: 'text', text }] as never,
+        content: [{ type: 'text', text: notes }] as never,
       } as never)
       if (!sent.result.ok) throw new Error(sent.result.error.message)
       pending.clear(sessionId)
@@ -100,57 +117,10 @@ export function apply(ctx: ClientContext): void {
   }
 
   /**
-   * Patch the session input SHELL's submit (both Enter and the send button
-   * route through it — keyboard.submit and actions.submit both call
-   * shell.submit) so staged file notes are merged into the outgoing message.
+   * Staged files are sent by the reliable panel button (merge into the draft
+   * + submit) or the direct prompt fallback; no submit monkey-patching.
    */
-  const wrapSubmit = (): boolean => {
-    const current = sessions.currentProvideInfo.getSnapshot()
-    const sessionId = current?.sessionId
-    if (sessionId === undefined) return false
-    // The conversation service is SESSION-scoped: resolve it through the
-    // session scope (the same path the built-in queue dock uses).
-    const actx = sessions.scope ? (sessions as { scope?: (id: string) => { get?(n: string): unknown } | undefined }).scope?.(sessionId) : undefined
-    const conversation = actx?.get?.('conversation') as {
-      input?: { shell?: (id: string) => {
-        state?: { getSnapshot(): { draft?: string } }
-        setDraft?: (text: string) => void
-        submit?: (mode?: string) => void
-      } }
-    } | undefined
-    const shell = conversation?.input?.shell?.(sessionId)
-    if (shell?.submit === undefined || shell?.setDraft === undefined) return false
-    const wrapped = shell as { __looklookWrapped?: boolean; submit?: (mode?: string) => void }
-    if (wrapped.__looklookWrapped === true) return true
-    wrapped.__looklookWrapped = true
-    const originalSubmit = shell.submit.bind(shell)
-    const setDraft = shell.setDraft
-    const readDraft = (): string => shell.state?.getSnapshot()?.draft ?? ''
-    wrapped.submit = (mode?: string) => {
-      try {
-        const staged = pending.get(sessionId)
-        if (staged.length > 0) {
-          // The model sees the path; the UI renders a file card from the
-          // 【looklook:file】 marker and hides the path text.
-          const notes = staged.map(f => {
-            const visible = t('upload.message', { name: f.name, path: f.path })
-            const meta = JSON.stringify({ name: f.name, path: f.path, size: f.size })
-            return `【looklook:开始】${visible}【looklook:结束】\n【looklook:file】${meta}【looklook:file】`
-          }).join('\n')
-          const draft = readDraft()
-          setDraft(draft === '' ? notes : `${draft}\n${notes}`)
-          pending.clear(sessionId)
-        }
-      } catch (error) {
-        // Never let the merge break sending — the original submit must run.
-        console.error('looklook submit merge failed:', error)
-      }
-      originalSubmit(mode)
-    }
-    return true
-  }
-  sessions.currentProvideInfo.subscribe(wrapSubmit)
-  wrapSubmit()
+  const wrapSubmit = (): boolean => false
 
   const eyes = new Map<string, EyeController>()
   const eyeFor = (sessionId: string): EyeController => {
@@ -326,27 +296,6 @@ export function apply(ctx: ClientContext): void {
         }))
         const staged = results.filter((r): r is { name: string; path: string; size: number } => r !== null)
         for (const result of staged) pending.add(sessionId, result)
-        // Ensure the submit wrapper is in place by the time the user presses
-        // Enter; if it cannot be installed, fall back to sending the paths as
-        // a user message right away so the file is never lost.
-        const wrapped = wrapSubmit()
-        if (!wrapped && staged.length > 0) {
-          const text = staged.map(f => {
-            const visible = t('upload.message', { name: f.name, path: f.path })
-            const meta = JSON.stringify({ name: f.name, path: f.path, size: f.size })
-            return `【looklook:开始】${visible}【looklook:结束】\n【looklook:file】${meta}【looklook:file】`
-          }).join('\n')
-          try {
-            await connection.api.sessions.prompt({
-              sessionId: sessionId as never,
-              mode: 'queue' as never,
-              content: [{ type: 'text', text }] as never,
-            } as never)
-            pending.clear(sessionId)
-          } catch (error) {
-            console.error('looklook fallback send failed:', error)
-          }
-        }
       })()
     }
     document.addEventListener('dragover', onDragOverCapture, true)
