@@ -45,16 +45,18 @@ function thumbSize(width?: number, height?: number): { width: number; height: nu
 }
 
 /** One fixed-size thumbnail with click-to-open lightbox. */
-function LooklookThumb({ ref, load }: { ref: ImageAttachmentRef; load: ImageLoader }) {
+function LooklookThumb({ attachment, load }: { attachment: ImageAttachmentRef; load: ImageLoader }) {
+  // NOTE: the prop is deliberately NOT named `ref` — React intercepts `ref`
+  // as a special prop and the value never arrives, crashing the renderer.
   const [src, setSrc] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   useEffect(() => {
     let live = true
     setSrc(null)
-    load(ref).then((url) => { if (live) setSrc(url) }).catch(() => { /* unavailable */ })
+    load(attachment).then((url) => { if (live) setSrc(url) }).catch(() => { /* unavailable */ })
     return () => { live = false }
-  }, [ref, load])
-  const box = thumbSize(ref.width, ref.height)
+  }, [attachment, load])
+  const box = thumbSize(attachment.width, attachment.height)
   return (
     <>
       <button
@@ -191,7 +193,7 @@ export function LooklookUserMessageNodeView(props: UserMessageNodeProps) {
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, margin: '8px 0' }}>
       {attachments.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
-          {attachments.map((ref) => <LooklookThumb key={ref.attachmentId} ref={ref} load={load} />)}
+          {attachments.map((item) => <LooklookThumb key={item.attachmentId} attachment={item} load={load} />)}
         </div>
       )}
       {trimmed.length > 0 && (
