@@ -11,7 +11,7 @@ import { useState } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { FeatureController } from './feature-controller.ts'
+import type { FeatureController, FeatureState } from './feature-controller.ts'
 import { LooklookFeaturesSection, type FeaturesInjected } from './Features.tsx'
 import { VisionSettingsSection, type VisionSettingsInjected } from './VisionSettings.tsx'
 
@@ -23,6 +23,8 @@ export interface LooklookCardInjected {
   t: TranslateNS<'looklook'>
   /** Feature controller (multimodal / zip toggles). */
   features: FeatureController
+  /** Reactive snapshot of the feature switches. */
+  useFeatures: () => FeatureState
   /** Probe one provider's `/models` endpoint through the host RPC. */
   listModels: VisionSettingsInjected['listModels']
   /** Reactive snapshot of the `multimodal` master switch. */
@@ -70,9 +72,9 @@ const css = {
 
 /** The plugin-configuration card body. */
 export function LooklookPluginCard(props: LooklookCardInjected) {
-  const { api, t, features, listModels, useMultimodal } = props
+  const { api, t, features, useFeatures, listModels, useMultimodal } = props
   const [open, setOpen] = useState(false)
-  const featuresProps: FeaturesInjected = { api, t, features }
+  const featuresProps: FeaturesInjected = { api, t, features, useFeatures }
   const visionProps: VisionSettingsInjected = { api, t, listModels, useMultimodal }
   const title = t('card.title')
   return (

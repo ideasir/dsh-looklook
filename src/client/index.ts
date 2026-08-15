@@ -77,6 +77,9 @@ export function apply(ctx: ClientContext): void {
   const useZipEnabled = (): boolean => useFeaturesSnapshot(
     (s: { status: string; zip?: boolean }) => s.status === 'ready' && s.zip !== false,
   ) as boolean
+  const useFeatures = (): import('./feature-controller.ts').FeatureState => useFeaturesSnapshot(
+    (s: import('./feature-controller.ts').FeatureState) => s,
+  ) as import('./feature-controller.ts').FeatureState
 
   // Pushed invalidations refresh loaded controllers without polling.
   ctx.effect(() => {
@@ -176,7 +179,7 @@ export function apply(ctx: ClientContext): void {
     name: 'settings.plugin.item',
     id: PLUGIN_CARD_ID,
     order: 30,
-    inject: (): LooklookCardInjected => ({ api: connection.api, t, features, listModels, useMultimodal }),
+    inject: (): LooklookCardInjected => ({ api: connection.api, t, features, useFeatures, listModels, useMultimodal }),
   }, LooklookPluginCard))
 
   // Composer upload control (archives + video), gated by the zip toggle.

@@ -12,7 +12,7 @@ import { useEffect, useState } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { FeatureController, SevenZState } from './feature-controller.ts'
+import type { FeatureController, FeatureState, SevenZState } from './feature-controller.ts'
 import { fetchSevenZStatus, requestSevenZInstall } from './feature-controller.ts'
 
 /** Injected face supplied by the plugin apply closure. */
@@ -23,6 +23,8 @@ export interface FeaturesInjected {
   t: TranslateNS<'looklook'>
   /** Feature controller (multimodal / zip toggles). */
   features: FeatureController
+  /** Reactive snapshot of the feature switches. */
+  useFeatures: () => FeatureState
 }
 
 const layout = {
@@ -73,8 +75,8 @@ function SwitchRow({ label, desc, checked, onChange, t }: {
 
 /** The plugin settings section body. */
 export function LooklookFeaturesSection(props: FeaturesInjected) {
-  const { t, features } = props
-  const state = features.store.getSnapshot()
+  const { t, features, useFeatures } = props
+  const state = useFeatures()
   const [sevenZ, setSevenZ] = useState<SevenZState>({ status: 'unknown' })
 
   const refreshSevenZ = async (): Promise<void> => {

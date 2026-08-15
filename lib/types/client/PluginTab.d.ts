@@ -8,7 +8,7 @@
  */
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client';
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots';
-import type { FeatureController } from './feature-controller.ts';
+import type { FeatureController, FeatureState } from './feature-controller.ts';
 import { type VisionSettingsInjected } from './VisionSettings.tsx';
 /** Injected face supplied by the plugin apply closure. */
 export interface LooklookCardInjected {
@@ -18,6 +18,8 @@ export interface LooklookCardInjected {
     t: TranslateNS<'looklook'>;
     /** Feature controller (multimodal / zip toggles). */
     features: FeatureController;
+    /** Reactive snapshot of the feature switches. */
+    useFeatures: () => FeatureState;
     /** Probe one provider's `/models` endpoint through the host RPC. */
     listModels: VisionSettingsInjected['listModels'];
     /** Reactive snapshot of the `multimodal` master switch. */

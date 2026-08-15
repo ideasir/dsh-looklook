@@ -9,7 +9,7 @@
  */
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client';
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots';
-import type { FeatureController } from './feature-controller.ts';
+import type { FeatureController, FeatureState } from './feature-controller.ts';
 /** Injected face supplied by the plugin apply closure. */
 export interface FeaturesInjected {
     /** The wire API client. */
@@ -18,6 +18,8 @@ export interface FeaturesInjected {
     t: TranslateNS<'looklook'>;
     /** Feature controller (multimodal / zip toggles). */
     features: FeatureController;
+    /** Reactive snapshot of the feature switches. */
+    useFeatures: () => FeatureState;
 }
 /** The plugin settings section body. */
 export declare function LooklookFeaturesSection(props: FeaturesInjected): import("react").JSX.Element;
