@@ -1,41 +1,38 @@
 /**
- * dsh-looklook — vision-assist for text-only conversation models.
+ * dsh-looklook — "看一看" any file for DeepSeek Harness.
  *
- * Host plugin. Answers the gateway's `prompt/image-admission` decision point
- * (admits images regardless of the selected model's declared modalities) and
- * rewrites model requests (rc.6: `agent/pre-step`; newer: `agent/request-messages`):
+ * Host plugin. Feature switches (settings page):
+ * - 多模态 (multimodal): image vision assist for text-only models. When ON,
+ *   answers `prompt/image-admission` and rewrites model requests; when OFF
+ *   the plugin is invisible to images (native DSH behavior).
+ * - ZIP: the `process_zip` tool (vendored from @ideasir/dsh-zip) plus the
+ *   archive upload channel.
  *
- * - eye off (per-session `vision.sessionOverrides`): images become the
- *   「没有开启多模态功能」placeholder, so a text-only model never sees raw
- *   image bytes and never errors;
- * - eye on + model declares image input: pass-through — the model's own
- *   multimodal capability is used;
- * - eye on + model is text-only: every image becomes a machine-readable
- *   image reference; the main model calls the looklook_describe tool to
- *   "see" the image (asking whatever question the user's request implies —
- *   pseudo-native multimodal, no hardcoded description rules).
+ * Upload channel: the client uploads archives/video through the registered
+ * `/api/looklook-upload` route into the session workspace `.uploads/` and
+ * sends a user message with the file path; the model then processes the file
+ * with process_zip / fs / bash.
  *
  * All registrations are effects: unloading the plugin removes the settings
- * namespace, the event listeners, and every disposer.
+ * namespaces, the event listeners, the routes, and every disposer.
  */
 import type { Context } from '@deepseek-ai/cordis';
 import { type VisionSettings } from './settings.ts';
 export { Config } from './settings.ts';
-export type { VisionProviderConfig, VisionSettings, VisionScope } from './settings.ts';
+export { LooklookConfig } from './settings.ts';
+export type { VisionProviderConfig, VisionSettings, VisionScope, LooklookSettings, LooklookScope } from './settings.ts';
 export { PLACEHOLDER_TEXT } from './translate.ts';
 export type { DescribeImageInput, DescribeResult } from './vision-client.ts';
 export { describeImages, statusMessage } from './vision-client.ts';
 export type { ImageAdmissionDecision, ImageAdmissionPayload, VisionDescribeEvent, VisionErrorCode } from './types.ts';
 /** Cordis plugin name used by loader diagnostics. */
 export declare const name = "looklook";
-/** Required services: settings (config + eye state), llm (model capability), sessions, attachments (image bytes), credentials (API keys), tools (looklook_describe), systemPrompt (tool guidance). */
+/** Required services: settings, llm, sessions, attachments, credentials, tools, systemPrompt, webServer. */
 export declare const inject: string[];
 /**
- * Plugin body: register the `vision` settings namespace, answer the image
- * admission decision point, and rewrite model requests at the
- * `agent/request-messages` waterfall.
- * @param ctx - host context.
- * @param config - composition-base configuration (the user settings layer
- *   overrides it live).
+ * Plugin body: register the feature toggles + vision settings namespaces,
+ * answer the image admission decision point, rewrite model requests at the
+ * `agent/request-messages` waterfall (when multimodal is ON), register the
+ * process_zip tool (gated by the zip toggle) and the upload/7z routes.
  */
 export declare function apply(ctx: Context, config: VisionSettings): void;

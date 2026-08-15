@@ -1,10 +1,10 @@
 /**
- * dsh-looklook client face: the "视觉模型" settings section and the per-session
- * eye toggle in the composer tool row.
+ * dsh-looklook client face: the "Look Look 功能" master-switch settings
+ * section, the (conditionally visible) "视觉模型" settings section, the
+ * per-session eye toggle, and the composer "上传文件" control.
  *
- * The eye toggle reads/writes the `vision` settings namespace through the
- * existing wire settings API (no new RPCs); the host face (src/index.ts)
- * consumes the same namespace at request time.
+ * All settings go through the existing wire settings API (no new RPCs); the
+ * host face (src/index.ts) consumes the same namespaces at request time.
  */
 
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
@@ -17,14 +17,17 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createEyeController, type EyeController } from './eye-controller.ts'
+import { createFeatureController, type FeatureController } from './feature-controller.ts'
 import { LooklookUserMessageNodeView } from './UserMessageNodeView.tsx'
+import { LooklookFeaturesSection, type FeaturesInjected } from './Features.tsx'
 import { VisionSettingsSection, type VisionSettingsInjected } from './VisionSettings.tsx'
 import { VisionToggle, type VisionToggleInjected } from './VisionToggle.tsx'
+import { UploadButton, type UploadInjected } from './UploadButton.tsx'
 import { en, zh, type LookLookKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** dsh-looklook copy (settings page + eye toggle). */
+    /** dsh-looklook copy (settings page + eye toggle + upload). */
     looklook: LookLookKey
   }
 }
@@ -32,18 +35,19 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Dictionary namespace owned by this plugin. */
 const NS = 'looklook'
 
-/** Settings section id and the eye toggle's slot entry id. */
-const SECTION_ID = 'looklook'
+/** Settings section ids and slot entry ids. */
+const FEATURES_ID = 'looklook'
+const VISION_ID = 'looklook-vision'
 const TOGGLE_ID = 'looklook-eye'
+const UPLOAD_ID = 'looklook-upload'
 
 /** Required services: slots (registration), locale (copy), connection (wire API), remote (pushed invalidations), sessions (per-session scoping). */
 export const inject = ['slots', 'locale', 'connection', 'remote', 'sessions']
 
 /**
- * Client plugin body: register the settings section and the composer eye
- * toggle. Each session gets its own eye controller (lazy map); pushed
- * settings invalidations refresh every loaded controller.
- * @param ctx - client root context.
+ * Client plugin body: register the master-switch settings section, the
+ * (multimodal-gated) vision settings section, the composer eye toggle, and
+ * the composer upload control.
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-looklook: dictionaries')
@@ -61,10 +65,22 @@ export function apply(ctx: ClientContext): void {
     return controller
   }
 
-  // Pushed invalidations refresh loaded eye states without polling.
+  // Feature master switches (multimodal / zip).
+  const features: FeatureController = createFeatureController(connection.api)
+  features.load()
+  const useFeaturesSnapshot = bindSnapshotSelector(features.store)
+  const useMultimodal = (): boolean => useFeaturesSnapshot(
+    (s: { status: string; multimodal?: boolean }) => s.status === 'ready' && s.multimodal !== false,
+  ) as boolean
+  const useZipEnabled = (): boolean => useFeaturesSnapshot(
+    (s: { status: string; zip?: boolean }) => s.status === 'ready' && s.zip !== false,
+  ) as boolean
+
+  // Pushed invalidations refresh loaded controllers without polling.
   ctx.effect(() => {
     const dispose = ctx.remote.$on('settings/document-updated', () => {
       for (const controller of eyes.values()) controller.load()
+      features.load()
     })
     return () => { dispose() }
   }, 'dsh-looklook: settings invalidation fan-out')
@@ -120,9 +136,7 @@ export function apply(ctx: ClientContext): void {
     return () => { void mounting.then(dispose => dispose()) }
   }, 'dsh-looklook: model-discovery remote')
 
-  /** Call the host discovery RPC once the namespace is mounted. The remote
-   * method resolves to the wire envelope `{ ok, value }` (value is the
-   * business result), so unwrap it to the shape the settings page consumes. */
+  /** Call the host discovery RPC once the namespace is mounted. */
   const listModels = async (provider: {
     baseURL: string
     apiKeyEnv: string
@@ -155,14 +169,32 @@ export function apply(ctx: ClientContext): void {
     }
   }
 
+  // Master-switch settings section (feature toggles + 7z install support).
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
-    id: SECTION_ID,
+    id: FEATURES_ID,
+    order: 11,
+    label: () => t('features.nav'),
+    inject: (): FeaturesInjected => ({ api: connection.api, t, features }),
+  }, LooklookFeaturesSection))
+
+  // Vision-model settings section, visible only while multimodal is ON.
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: VISION_ID,
     order: 12,
     label: () => t('settings.nav'),
-    inject: (): VisionSettingsInjected => ({ api: connection.api, t, listModels }),
+    inject: (): VisionSettingsInjected => ({ api: connection.api, t, listModels, useMultimodal }),
   }, VisionSettingsSection))
 
+  // Composer upload control (archives + video), gated by the zip toggle.
+  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+    name: 'conversation.input.left',
+    id: UPLOAD_ID,
+    inject: (sessionId: string): UploadInjected => ({ api: connection.api, t, useZipEnabled, sessionId }),
+  }, UploadButton))
+
+  // Per-session eye toggle.
   ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
     name: 'conversation.input.right',
     id: TOGGLE_ID,
@@ -179,9 +211,7 @@ export function apply(ctx: ClientContext): void {
   // Render the ORIGINAL image in user messages: the host embeds an attachment
   // marker in the recognition text (rc.6 record), and this view scans for it,
   // loads the image via the conversation's loadImage, and draws it above the
-  // text. Native image blocks (multimodal models / newer harnesses) render the
-  // same way. Priority -1 shadows the built-in user bubble; the view is
-  // defensive and falls back to plain text on unexpected content.
+  // text. Priority -1 shadows the built-in user bubble.
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
     key: 'user',

@@ -53,6 +53,33 @@ export const Config: Schema<VisionSettings> = Schema.object({
 /** The settings owner handle: merged value + live updates. */
 export type VisionScope = SettingsScope<VisionSettings>
 
+// ── Feature toggles (the plugin master switches) ──
+
+/** Plugin-level feature switches shown in the settings page. */
+export interface LooklookSettings {
+  /** Master switch for the vision (multi-modal) feature. */
+  multimodal: boolean
+  /** Whether the ZIP processing feature is enabled. */
+  zip: boolean
+}
+
+export const LooklookConfig: Schema<LooklookSettings> = Schema.object({
+  multimodal: Schema.boolean().default(true),
+  zip: Schema.boolean().default(true),
+})
+
+/** The settings owner handle for the feature toggles. */
+export type LooklookScope = SettingsScope<LooklookSettings>
+
+/** Resolve the live feature switches. */
+export function looklookFeatures(scope: LooklookScope): LooklookSettings {
+  const value = scope.get()
+  return {
+    multimodal: value.multimodal !== false,
+    zip: value.zip !== false,
+  }
+}
+
 /** Resolve the effective eye state for one session (defaults to on). */
 export function eyeStateFor(scope: VisionScope, sessionId: string | undefined): 'on' | 'off' {
   if (sessionId === undefined) return 'on'

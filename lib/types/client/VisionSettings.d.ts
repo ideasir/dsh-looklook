@@ -26,6 +26,8 @@ export interface VisionSettingsInjected {
         ok: false;
         error: string;
     }>;
+    /** Reactive snapshot of the `multimodal` master switch (false hides this section). */
+    useMultimodal: () => boolean;
 }
 /** One provider under local edit. */
 export interface ProviderDraft {

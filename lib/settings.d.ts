@@ -35,6 +35,18 @@ export interface VisionSettings {
 export declare const Config: Schema<VisionSettings>;
 /** The settings owner handle: merged value + live updates. */
 export type VisionScope = SettingsScope<VisionSettings>;
+/** Plugin-level feature switches shown in the settings page. */
+export interface LooklookSettings {
+    /** Master switch for the vision (multi-modal) feature. */
+    multimodal: boolean;
+    /** Whether the ZIP processing feature is enabled. */
+    zip: boolean;
+}
+export declare const LooklookConfig: Schema<LooklookSettings>;
+/** The settings owner handle for the feature toggles. */
+export type LooklookScope = SettingsScope<LooklookSettings>;
+/** Resolve the live feature switches. */
+export declare function looklookFeatures(scope: LooklookScope): LooklookSettings;
 /** Resolve the effective eye state for one session (defaults to on). */
 export declare function eyeStateFor(scope: VisionScope, sessionId: string | undefined): 'on' | 'off';
 /** The enabled providers in failover order; empty when none is configured. */

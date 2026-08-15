@@ -41,7 +41,10 @@ const ctx = {
   plugin: () => undefined,
   provide: () => undefined,
   on: (ev, fn) => { handlers.push([ev, fn]); },
-  get: () => undefined,
+  get: (name) => {
+    if (name === "webServer") return { register: () => () => {} };
+    return undefined;
+  },
   logger: { warn: () => undefined },
   tools: { register: (def) => { tools.push(def); } },
   systemPrompt: { section: (s) => { prompts.push(s); } },
@@ -52,7 +55,10 @@ apply(ctx, { providers: [], sessionOverrides: {}, maxDescribeChars: 1000 });
 console.log("tools registered:", tools.map(t => t.name));
 console.log("system prompts:", prompts.map(p => p.name));
 console.log("events:", handlers.map(h => h[0]).join(", "));
-if (tools.length !== 1 || tools[0].name !== "looklook_describe") throw new Error("tool not registered");
-if (prompts.length !== 1) throw new Error("system prompt not registered");
-if (handlers.length !== 3) throw new Error("handlers missing");
+const names = tools.map(t => t.name);
+if (names.length !== 2 || !names.includes("looklook_describe") || !names.includes("process_zip")) {
+  throw new Error("tools not registered: " + names.join(", "));
+}
+if (prompts.length < 2) throw new Error("system prompts missing");
+if (handlers.length < 3) throw new Error("handlers missing");
 console.log("ALL TOOL-ARCH TESTS PASS");

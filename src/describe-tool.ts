@@ -10,7 +10,8 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { VisionScope } from './settings.ts'
+import type { VisionScope, LooklookScope } from './settings.ts'
+import { looklookFeatures } from './settings.ts'
 import { describeImages } from './vision-client.ts'
 
 /**
@@ -60,6 +61,7 @@ export function registerDescribeTool(
   ctx: Context,
   scope: VisionScope,
   refRegistry: Map<string, ImageAttachmentRef>,
+  features: LooklookScope,
 ): void {
   ctx.tools.register(defineTool({
     name: 'looklook_describe',
@@ -91,6 +93,9 @@ export function registerDescribeTool(
     },
     isConcurrencySafe: () => true,
     async execute(args: { image_ref?: unknown; question?: unknown }, exec) {
+      if (!looklookFeatures(features).multimodal) {
+        return { text: '多模态功能未开启：请在插件设置中开启「多模态」后再使用识图能力。' }
+      }
       const rawRef = typeof args.image_ref === 'string' ? args.image_ref : ''
       const question = typeof args.question === 'string' && args.question.trim().length > 0
         ? args.question.trim()

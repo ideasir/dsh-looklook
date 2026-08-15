@@ -1,22 +1,20 @@
 /**
- * dsh-looklook — vision-assist for text-only conversation models.
+ * dsh-looklook — "看一看" any file for DeepSeek Harness.
  *
- * Host plugin. Answers the gateway's `prompt/image-admission` decision point
- * (admits images regardless of the selected model's declared modalities) and
- * rewrites model requests (rc.6: `agent/pre-step`; newer: `agent/request-messages`):
+ * Host plugin. Feature switches (settings page):
+ * - 多模态 (multimodal): image vision assist for text-only models. When ON,
+ *   answers `prompt/image-admission` and rewrites model requests; when OFF
+ *   the plugin is invisible to images (native DSH behavior).
+ * - ZIP: the `process_zip` tool (vendored from @ideasir/dsh-zip) plus the
+ *   archive upload channel.
  *
- * - eye off (per-session `vision.sessionOverrides`): images become the
- *   「没有开启多模态功能」placeholder, so a text-only model never sees raw
- *   image bytes and never errors;
- * - eye on + model declares image input: pass-through — the model's own
- *   multimodal capability is used;
- * - eye on + model is text-only: every image becomes a machine-readable
- *   image reference; the main model calls the looklook_describe tool to
- *   "see" the image (asking whatever question the user's request implies —
- *   pseudo-native multimodal, no hardcoded description rules).
+ * Upload channel: the client uploads archives/video through the registered
+ * `/api/looklook-upload` route into the session workspace `.uploads/` and
+ * sends a user message with the file path; the model then processes the file
+ * with process_zip / fs / bash.
  *
  * All registrations are effects: unloading the plugin removes the settings
- * namespace, the event listeners, and every disposer.
+ * namespaces, the event listeners, the routes, and every disposer.
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -25,15 +23,18 @@ import { contentHasImage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type { SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session/types'
-import { Config, eyeStateFor, type VisionSettings, type VisionScope } from './settings.ts'
+import { Config, LooklookConfig, looklookFeatures, eyeStateFor, type VisionSettings, type VisionScope, type LooklookScope } from './settings.ts'
 import { replaceImagesWithPlaceholder, rewriteImagesToToolReferences } from './translate.ts'
 import { registerDescribeTool } from './describe-tool.ts'
+import { registerZipTool } from './zip-tool.ts'
+import { registerUploadRoutes } from './upload.ts'
 import { LooklookRemoteService } from './remote.ts'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from './types.ts'
 
 export { Config } from './settings.ts'
-export type { VisionProviderConfig, VisionSettings, VisionScope } from './settings.ts'
+export { LooklookConfig } from './settings.ts'
+export type { VisionProviderConfig, VisionSettings, VisionScope, LooklookSettings, LooklookScope } from './settings.ts'
 export { PLACEHOLDER_TEXT } from './translate.ts'
 export type { DescribeImageInput, DescribeResult } from './vision-client.ts'
 export { describeImages, statusMessage } from './vision-client.ts'
@@ -42,8 +43,8 @@ export type { ImageAdmissionDecision, ImageAdmissionPayload, VisionDescribeEvent
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'looklook'
 
-/** Required services: settings (config + eye state), llm (model capability), sessions, attachments (image bytes), credentials (API keys), tools (looklook_describe), systemPrompt (tool guidance). */
-export const inject = ['settings', 'llm', 'sessions', 'attachments', 'credentials', 'tools', 'systemPrompt']
+/** Required services: settings, llm, sessions, attachments, credentials, tools, systemPrompt, webServer. */
+export const inject = ['settings', 'llm', 'sessions', 'attachments', 'credentials', 'tools', 'systemPrompt', 'webServer']
 
 /** Recognize whether any message in the request carries image content. */
 function requestHasImage(options: GenerateOptions): boolean {
@@ -51,15 +52,17 @@ function requestHasImage(options: GenerateOptions): boolean {
 }
 
 /**
- * Plugin body: register the `vision` settings namespace, answer the image
- * admission decision point, and rewrite model requests at the
- * `agent/request-messages` waterfall.
- * @param ctx - host context.
- * @param config - composition-base configuration (the user settings layer
- *   overrides it live).
+ * Plugin body: register the feature toggles + vision settings namespaces,
+ * answer the image admission decision point, rewrite model requests at the
+ * `agent/request-messages` waterfall (when multimodal is ON), register the
+ * process_zip tool (gated by the zip toggle) and the upload/7z routes.
  */
 export function apply(ctx: Context, config: VisionSettings): void {
+  // Feature master switches (settings page → plugin area).
+  const features: LooklookScope = ctx.settings.register(settingsNamespace('looklook'), LooklookConfig, { base: undefined })
   const scope: VisionScope = ctx.settings.register(settingsNamespace('vision'), Config, { base: config })
+
+  const multimodalEnabled = (): boolean => looklookFeatures(features).multimodal
 
   // Host receiver for the client's model-discovery RPC (settings page).
   ctx.plugin(LooklookRemoteService)
@@ -68,84 +71,78 @@ export function apply(ctx: Context, config: VisionSettings): void {
   // describe tool can read images by the reference the user message carries.
   const refRegistry = new Map<string, ImageAttachmentRef>()
 
-  // The "eyes" of the pseudo-native multimodal model: the main model asks
-  // this tool whatever question the user's request implies.
-  registerDescribeTool(ctx, scope, refRegistry)
+  // The "eyes" of the pseudo-native multimodal model (runtime-gated on the
+  // multimodal toggle, so switching it in settings applies without restart).
+  registerDescribeTool(ctx, scope, refRegistry, features)
 
-  // Tell the main model how to see images.
+  // Tell the main model how to see images and how uploads land.
   ctx.systemPrompt.section({
     name: 'looklook:vision',
     order: 200,
     text: '用户消息中的图片内容对你不可见。当需要了解用户图片的内容时，必须调用 looklook_describe 工具：把用户消息中的图片引用原样填入 image_ref，并根据用户的实际问题决定 question 的内容（用户问什么就针对性地问什么，不要一律要求全量描述）。',
   })
+  ctx.systemPrompt.section({
+    name: 'looklook:files',
+    order: 205,
+    text: '用户上传的文件（压缩包、视频等）会保存到会话工作区的 .uploads/ 目录，上传时消息里会带有文件路径。处理压缩包用 process_zip 工具（list / extract / read_entry）；处理其它文件用 bash/fs 工具。7z 压缩包若解压失败，检查机器是否已安装 7z（插件设置页可安装）。',
+  })
 
   // rc.6 admission override: the api-proxy's hardcoded text-only refusal
-  // consults this optional service (patched into dsh-host-apiproxy). This
-  // plugin services images downstream (translation or the placeholder), so
-  // the answer is always "allow" while mounted.
+  // consults this optional service (patched into dsh-host-apiproxy). Only
+  // answer "allow" while the multimodal feature is ON.
   ctx.provide('imageAdmission', {
-    decide: () => 'allow' as const,
+    decide: () => (multimodalEnabled() ? 'allow' as const : undefined),
   })
 
   // The gateway asks before admitting an image while the selected model is
-  // text-only. This plugin services the image downstream (translation or the
-  // placeholder), so the answer is always "allow" while mounted.
-  ctx.on('prompt/image-admission', () => 'allow')
+  // text-only. Answer "allow" only while multimodal is ON; otherwise return
+  // undefined so DSH falls back to native behavior.
+  ctx.on('prompt/image-admission', () => (multimodalEnabled() ? 'allow' : undefined))
 
-  // rc.6 request rewriting: `agent/request-messages` and `llm/stream`'s
-  // argument are both frozen in this release — `llm/stream` cannot replace the
-  // request and the session log is built from `agent/pre-step`'s decision.
-  // Rewriting here is the only seam that changes what a text-only model sees
-  // (the log then carries the rewritten text instead of the raw image; newer
-  // harnesses restore the request-only rewrite via agent/request-messages).
+  // rc.6 request rewriting: `agent/pre-step` and `agent/request-messages`.
+  // When multimodal is OFF the plugin does nothing to images (native).
   ctx.on('agent/pre-step', async ({ agent, messages, signal }, next) => {
+    if (!multimodalEnabled()) return next()
     if (!messages.some(message => contentHasImage(message.content))) return next()
     const decision = await next()
     if (decision.kind !== 'enter') return decision
     const sessionId = String(agent.session.id) as SessionId
     const eye = eyeStateFor(scope, sessionId)
     if (eye === 'off') {
-      // Eye off: strip images to the placeholder; the original image still
-      // shows in the chat via the attachment marker.
       return {
         ...decision,
         messages: replaceImagesWithPlaceholder(decision.messages) as UserMessage[],
       }
     }
-    // Eye on: use the conversation model's own multimodal capability when it
-    // declares image input; unknown capability passes through untouched so a
-    // multimodal model is never degraded by this plugin.
     const info = await ctx.llm.resolveModelInfo(agent.options.provider ?? '', agent.options.model ?? '', signal)
     if (info.inputModalities === undefined || info.inputModalities.includes('image')) {
       return decision
     }
-    // Eye on + text-only model: turn images into tool references (fast —
-    // no vision call, so the message appears in the chat immediately; the
-    // main model calls looklook_describe when it needs to see the image).
     const rewritten = rewriteImagesToToolReferences(decision.messages, refRegistry)
     return { ...decision, messages: rewritten as UserMessage[] }
   })
 
   ctx.on('agent/request-messages', async (_payload, request, next) => {
+    if (!multimodalEnabled()) return next()
     if (!requestHasImage(request)) return next()
 
     const eye = eyeStateFor(scope, request.sessionId)
     if (eye === 'off') {
-      // Eye off: strip images to the placeholder; the original image still
-      // shows in the chat via the attachment marker.
       return { ...request, messages: replaceImagesWithPlaceholder(request.messages) }
     }
 
-    // Eye on: use the conversation model's own multimodal capability when it
-    // declares image input; unknown capability passes through untouched so a
-    // multimodal model is never degraded by this plugin.
     const info = await ctx.llm.resolveModelInfo(request.provider, request.model, request.signal)
     if (info.inputModalities === undefined || info.inputModalities.includes('image')) {
       return next()
     }
 
-    // Eye on + text-only model: turn images into tool references (fast).
     const messages = rewriteImagesToToolReferences(request.messages, refRegistry)
     return { ...request, messages }
   })
+
+  // ZIP processing tool (vendored from dsh-zip), gated by the zip toggle.
+  registerZipTool(ctx, features)
+
+  // Upload channel (archives + video) and the 7z install support routes.
+  registerUploadRoutes(ctx)
 }

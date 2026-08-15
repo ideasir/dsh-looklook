@@ -7,6 +7,6 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment';
-import type { VisionScope } from './settings.ts';
+import type { VisionScope, LooklookScope } from './settings.ts';
 /** Register the describe tool; refRegistry is populated as images arrive. */
-export declare function registerDescribeTool(ctx: Context, scope: VisionScope, refRegistry: Map<string, ImageAttachmentRef>): void;
+export declare function registerDescribeTool(ctx: Context, scope: VisionScope, refRegistry: Map<string, ImageAttachmentRef>, features: LooklookScope): void;

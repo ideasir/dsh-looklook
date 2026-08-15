@@ -30,6 +30,8 @@ export interface VisionSettingsInjected {
   listModels: (provider: { baseURL: string; apiKeyEnv: string }) => Promise<
     { ok: true; models: string[] } | { ok: false; error: string }
   >
+  /** Reactive snapshot of the `multimodal` master switch (false hides this section). */
+  useMultimodal: () => boolean
 }
 
 /** One provider under local edit. */
@@ -142,7 +144,16 @@ const layout = {
 
 /** The settings section body, styled like the Models page. */
 export function VisionSettingsSection(props: VisionSettingsInjected) {
-  const { api, t, listModels } = props
+  const { api, t, listModels, useMultimodal } = props
+  const multimodalOn = useMultimodal()
+  if (!multimodalOn) {
+    return (
+      <div style={layout.section}>
+        <h2 style={layout.title}>{t('settings.nav')}</h2>
+        <p style={layout.hint}>{t('vision.disabled')}</p>
+      </div>
+    )
+  }
   const [providers, setProviders] = useState<ProviderDraft[]>([])
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
