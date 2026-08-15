@@ -66,16 +66,18 @@ export function apply(ctx: ClientContext): void {
   const usePending = bindSnapshotSelector(pending.store)
 
   /** Merge staged file notes into the outgoing message right before submit. */
-  const wrapSubmit = (): void => {
+  const wrapSubmit = (): boolean => {
     const current = sessions.currentProvideInfo.getSnapshot()
     const sessionId = current?.sessionId
     const actions = current?.props?.inputActions as {
       submit?: () => void
       setDraft?: (text: string) => void
     } | undefined
-    if (sessionId === undefined || actions?.submit === undefined || actions?.setDraft === undefined) return
+    if (sessionId === undefined || actions?.submit === undefined || actions?.setDraft === undefined) {
+      return false
+    }
     const wrapped = actions as { __looklookWrapped?: boolean; submit?: () => void }
-    if (wrapped.__looklookWrapped === true) return
+    if (wrapped.__looklookWrapped === true) return true
     wrapped.__looklookWrapped = true
     const originalSubmit = actions.submit.bind(actions)
     const setDraft = actions.setDraft
@@ -83,7 +85,13 @@ export function apply(ctx: ClientContext): void {
       try {
         const staged = pending.get(sessionId)
         if (staged.length > 0) {
-          const notes = staged.map(f => t('upload.message', { name: f.name, path: f.path })).join('\n')
+          // The model sees the path; the UI renders a file card from the
+          // 【looklook:file】 marker and hides the path text.
+          const notes = staged.map(f => {
+            const visible = t('upload.message', { name: f.name, path: f.path })
+            const meta = JSON.stringify({ name: f.name, path: f.path, size: f.size })
+            return `【looklook:开始】${visible}【looklook:结束】\n【looklook:file】${meta}【looklook:file】`
+          }).join('\n')
           const inputState = current?.hooks?.input as { getSnapshot(): { draft?: string } } | undefined
           const draft = inputState?.getSnapshot()?.draft ?? ''
           setDraft(draft === '' ? notes : `${draft}\n${notes}`)
@@ -95,6 +103,7 @@ export function apply(ctx: ClientContext): void {
       }
       originalSubmit()
     }
+    return true
   }
   sessions.currentProvideInfo.subscribe(wrapSubmit)
   wrapSubmit()
@@ -271,8 +280,28 @@ export function apply(ctx: ClientContext): void {
             return null
           }
         }))
-        for (const result of results) {
-          if (result !== null) pending.add(sessionId, result)
+        const staged = results.filter((r): r is { name: string; path: string; size: number } => r !== null)
+        for (const result of staged) pending.add(sessionId, result)
+        // Ensure the submit wrapper is in place by the time the user presses
+        // Enter; if it cannot be installed, fall back to sending the paths as
+        // a user message right away so the file is never lost.
+        const wrapped = wrapSubmit()
+        if (!wrapped && staged.length > 0) {
+          const text = staged.map(f => {
+            const visible = t('upload.message', { name: f.name, path: f.path })
+            const meta = JSON.stringify({ name: f.name, path: f.path, size: f.size })
+            return `【looklook:开始】${visible}【looklook:结束】\n【looklook:file】${meta}【looklook:file】`
+          }).join('\n')
+          try {
+            await connection.api.sessions.prompt({
+              sessionId: sessionId as never,
+              mode: 'queue' as never,
+              content: [{ type: 'text', text }] as never,
+            } as never)
+            pending.clear(sessionId)
+          } catch (error) {
+            console.error('looklook fallback send failed:', error)
+          }
         }
       })()
     }

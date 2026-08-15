@@ -23,6 +23,51 @@ const IMAGE_MARKER_RE = /【附图:([^】]+)】/g
 const HIDE_START = '【looklook:开始】'
 const HIDE_END = '【looklook:结束】'
 
+/** Host file marker: 「【looklook:file】{json}【looklook:file】」. */
+const FILE_MARKER_RE = /【looklook:file】([\s\S]*?)【looklook:file】/g
+
+/** One staged file's metadata embedded in the marker. */
+interface FileMeta {
+  name: string
+  path: string
+  size: number
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/** A rendered attachment card: icon + name + size. */
+function FileCard({ file }: { file: FileMeta }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        maxWidth: 320,
+        padding: '8px 12px',
+        border: '1px solid var(--dsw-alias-border-l2)',
+        borderRadius: 10,
+        background: 'var(--dsw-alias-bg-layer-2)',
+        fontSize: 13,
+        color: 'var(--dsw-alias-label-primary)',
+      }}
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 3l6 6h-4v8h-4v-8H6l6-6z" fill="currentColor" />
+        <path d="M4 19h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+      <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}>{file.name}</span>
+        <span style={{ fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' }}>{formatSize(file.size)}</span>
+      </span>
+    </span>
+  )
+}
+
 /** Thumbnail fixed dimension (short side cap). */
 const THUMB_MAX = 220
 
@@ -168,6 +213,7 @@ export function LooklookUserMessageNodeView(props: UserMessageNodeProps) {
   }
   const texts: string[] = []
   const attachments: ImageAttachmentRef[] = []
+  const files: FileMeta[] = []
   const rawBlocks: string[] = []
   for (const raw of content) {
     const block = raw as ContentBlockLike
@@ -180,17 +226,34 @@ export function LooklookUserMessageNodeView(props: UserMessageNodeProps) {
   }
   const embeddedRefs = collectEmbeddedRefs(rawBlocks.join(''))
   const joined = texts.join('')
-  const cleaned = joined.replace(IMAGE_MARKER_RE, (_all, payload: string) => {
-    const parsed = parseMarkerRef(payload)
-    const withMeta = embeddedRefs.get(parsed.attachmentId)
-    attachments.push(withMeta ?? parsed)
-    return ''
-  })
+  const cleaned = joined
+    .replace(FILE_MARKER_RE, (_all, payload: string) => {
+      try {
+        const parsed = JSON.parse(payload) as Partial<FileMeta>
+        if (typeof parsed?.name === 'string' && typeof parsed?.path === 'string') {
+          files.push({ name: parsed.name, path: parsed.path, size: typeof parsed.size === 'number' ? parsed.size : 0 })
+        }
+      } catch {
+        /* skip malformed file marker */
+      }
+      return ''
+    })
+    .replace(IMAGE_MARKER_RE, (_all, payload: string) => {
+      const parsed = parseMarkerRef(payload)
+      const withMeta = embeddedRefs.get(parsed.attachmentId)
+      attachments.push(withMeta ?? parsed)
+      return ''
+    })
   const trimmed = cleaned.trim()
-  if (attachments.length === 0 && trimmed.length === 0) return null
+  if (attachments.length === 0 && files.length === 0 && trimmed.length === 0) return null
   const load = props.loadImage ?? (() => Promise.reject(new Error('image loader unavailable')))
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, margin: '8px 0' }}>
+      {files.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
+          {files.map((file, index) => <FileCard key={`${file.path}-${index}`} file={file} />)}
+        </div>
+      )}
       {attachments.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
           {attachments.map((item) => <LooklookThumb key={item.attachmentId} attachment={item} load={load} />)}
