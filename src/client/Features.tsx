@@ -37,7 +37,7 @@ const css = {
   error: { margin: 0, fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-state-warn-label)' },
 } as const
 
-/** Slider-style switch (track + knob). */
+/** Slider-style switch (track + knob), smooth spring motion. */
 function SliderSwitch({ checked, onChange, label }: {
   checked: boolean
   onChange: (next: boolean) => void
@@ -62,7 +62,8 @@ function SliderSwitch({ checked, onChange, label }: {
         cursor: 'pointer',
         padding: 0,
         background: checked ? 'var(--dsw-alias-state-success-primary)' : 'var(--dsw-alias-border-l3)',
-        transition: 'background .14s ease-in-out',
+        transition: 'background .18s cubic-bezier(0.4, 0, 0.2, 1)',
+        boxShadow: checked ? 'inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-success-primary) 40%, transparent)' : 'none',
       }}
     >
       <span
@@ -74,15 +75,15 @@ function SliderSwitch({ checked, onChange, label }: {
           height: knob,
           borderRadius: 999,
           background: '#fff',
-          boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
-          transition: 'left .14s ease-in-out',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+          transition: 'left .2s cubic-bezier(0.34, 1.56, 0.64, 1)',
         }}
       />
     </button>
   )
 }
 
-/** One switch row (label + description left, slider right). */
+/** One switch row (slider left, label + description right). */
 function SwitchRow({ label, desc, checked, onChange }: {
   label: string
   desc: string
@@ -91,11 +92,11 @@ function SwitchRow({ label, desc, checked, onChange }: {
 }) {
   return (
     <div style={css.row}>
+      <SliderSwitch checked={checked} onChange={onChange} label={label} />
       <span style={css.rowText}>
         <span style={css.rowName}>{label}</span>
         <span style={css.rowDesc}>{desc}</span>
       </span>
-      <SliderSwitch checked={checked} onChange={onChange} label={label} />
     </div>
   )
 }

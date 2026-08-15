@@ -155,17 +155,38 @@ const PATCHES = [
     ],
   },
   {
-    // Transitional: expose the plugin's `vision` settings namespace to the
-    // configuration client (the browser settings page). Upstream this becomes
-    // a general settings-registration option; the allowlist entry is the
-    // equivalent patch for rc.6.
+    // Transitional: expose the plugin's `vision` and `looklook` settings
+    // namespaces to the configuration client (the browser settings page).
+    // Upstream this becomes a general settings-registration option; the
+    // allowlist entry is the equivalent patch for rc.6.
     id: 'api-proxy-expose-vision-namespace',
     file: join(root, '@deepseek-ai', 'dsh-host-apiproxy', 'lib', 'index.js'),
     marker: '/* dsh-looklook: expose vision settings namespace */',
     edits: [
       {
-        from: `const PRODUCT_SETTINGS_NAMESPACES = new Set(["ui-onboarding", SETTINGS_NAMESPACE]);`,
-        to: `const PRODUCT_SETTINGS_NAMESPACES = new Set(["ui-onboarding", SETTINGS_NAMESPACE, "vision"]); /* dsh-looklook */`,
+        from: `const WEB_SETTINGS_NAMESPACES = [
+	"agent-loop",
+	"shell",
+	"locale",
+	"permission",
+	"ui-conversation",
+	"ui-theme",
+	"web-search-deepseek"
+];`,
+        to: `const WEB_SETTINGS_NAMESPACES = [
+	"agent-loop",
+	"shell",
+	"locale",
+	"permission",
+	"ui-conversation",
+	"ui-theme",
+	"web-search-deepseek",
+	// dsh-looklook: vision-assist + looklook settings sections (exposed here
+	// because rc.6 has no register()-based exposure API — a harness upgrade
+	// must re-apply).
+	"vision",
+	"looklook"
+];`,
       },
     ],
   },
