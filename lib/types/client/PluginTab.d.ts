@@ -1,7 +1,8 @@
 /**
  * LooklookPluginCard: the looklook configuration card inside the Plugins
- * settings section's "插件配置" tab (`settings.plugin.item`). One card =
- * one plugin setting:
+ * settings section's "插件配置" tab (`settings.plugin.item`). Uses the same
+ * collapsible card chrome as the agent-loop / bash / web-search cards:
+ * a header (title + description + chevron) that discloses the controls:
  * - the master switches (多模态 / ZIP) and the 7z install support;
  * - the vision-model configuration, visible while 多模态 is ON.
  */
