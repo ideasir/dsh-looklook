@@ -18,6 +18,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createEyeController, type EyeController } from './eye-controller.ts'
 import { createFeatureController, type FeatureController } from './feature-controller.ts'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createPendingFilesController, type PendingFilesController } from './pending-files.ts'
 import { LooklookUserMessageNodeView } from './UserMessageNodeView.tsx'
 import { LooklookPluginCard, type LooklookCardInjected } from './PluginTab.tsx'
@@ -64,6 +65,38 @@ export function apply(ctx: ClientContext): void {
   // Pending staged files (uploaded, waiting for the user to press Enter).
   const pending: PendingFilesController = createPendingFilesController()
   const usePending = bindSnapshotSelector(pending.store)
+
+  // Per-session send state (chip-panel button + visible errors).
+  const sendStore = createSnapshotStore<Record<string, { sending: boolean; error: string | null }>>({})
+  const useSendSnapshot = bindSnapshotSelector(sendStore)
+  const setSendState = (sessionId: string, next: { sending: boolean; error: string | null }): void => {
+    sendStore.set({ ...sendStore.getSnapshot(), [sessionId]: next })
+  }
+
+  /** Send every staged file for a session via the reliable prompt path. */
+  const sendPending = async (sessionId: string): Promise<void> => {
+    const staged = pending.get(sessionId)
+    if (staged.length === 0) return
+    setSendState(sessionId, { sending: true, error: null })
+    try {
+      const text = staged.map(f => {
+        const visible = t('upload.message', { name: f.name, path: f.path })
+        const meta = JSON.stringify({ name: f.name, path: f.path, size: f.size })
+        return `【looklook:开始】${visible}【looklook:结束】\n【looklook:file】${meta}【looklook:file】`
+      }).join('\n')
+      const sent = await connection.api.sessions.prompt({
+        sessionId: sessionId as never,
+        mode: 'queue' as never,
+        content: [{ type: 'text', text }] as never,
+      } as never)
+      if (!sent.result.ok) throw new Error(sent.result.error.message)
+      pending.clear(sessionId)
+      setSendState(sessionId, { sending: false, error: null })
+    } catch (error) {
+      setSendState(sessionId, { sending: false, error: error instanceof Error ? error.message : String(error) })
+      console.error('looklook sendPending failed:', error)
+    }
+  }
 
   /**
    * Patch the session input SHELL's submit (both Enter and the send button
@@ -325,7 +358,15 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
     name: 'conversation.input.dock',
     id: PENDING_ID,
-    inject: (sessionId: string): FileChipsInjected => ({ t, pending, usePending, sessionId }),
+    inject: (sessionId: string): FileChipsInjected => {
+      const state = useSendSnapshot((s) => s[sessionId]) as { sending?: boolean; error?: string | null } | undefined
+      return {
+        t, pending, usePending, sessionId,
+        onSend: () => { void sendPending(sessionId) },
+        sending: state?.sending === true,
+        sendError: state?.error ?? null,
+      }
+    },
   }, FileChips))
 
   // Per-session eye toggle.

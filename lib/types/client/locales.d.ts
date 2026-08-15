@@ -44,6 +44,8 @@ export declare const zh: {
     'features.multimodal.desc': string;
     'upload.title': string;
     'upload.remove': string;
+    'upload.send': string;
+    'upload.sending': string;
     'upload.unsupported': string;
     'upload.failed': string;
     'upload.uploading': string;
@@ -97,6 +99,8 @@ export declare const en: {
     'features.multimodal.desc': string;
     'upload.title': string;
     'upload.remove': string;
+    'upload.send': string;
+    'upload.sending': string;
     'upload.unsupported': string;
     'upload.failed': string;
     'upload.uploading': string;

@@ -16,6 +16,12 @@ export interface FileChipsInjected {
     usePending: (selector: (state: PendingFilesState) => unknown) => unknown;
     /** The current session id (injected by the slot owner). */
     sessionId: string;
+    /** Send every pending file right now (reliable prompt path). */
+    onSend: () => void;
+    /** Whether a send is in flight. */
+    sending: boolean;
+    /** Visible send error (or null). */
+    sendError: string | null;
 }
 /** One chip card (hover reveals the remove ×). */
 export declare function FileChips(props: FileChipsInjected): import("react").JSX.Element | null;
