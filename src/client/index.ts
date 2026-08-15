@@ -379,6 +379,7 @@ export function apply(ctx: ClientContext): void {
         controller,
         useSnapshot: bindSnapshotSelector(controller.store),
         t,
+        useMultimodal,
       }
     },
   }, VisionToggle))

@@ -74,6 +74,8 @@ const css = {
 export function LooklookPluginCard(props: LooklookCardInjected) {
   const { api, t, features, useFeatures, listModels, useMultimodal } = props
   const [open, setOpen] = useState(false)
+  // Hook order stays stable: both hooks run before any conditional return.
+  const multimodalOn = useMultimodal()
   const featuresProps: FeaturesInjected = { api, t, features, useFeatures }
   const visionProps: VisionSettingsInjected = { api, t, listModels, useMultimodal }
   const title = t('card.title')
@@ -97,8 +99,12 @@ export function LooklookPluginCard(props: LooklookCardInjected) {
       {open && (
         <div style={css.body}>
           <LooklookFeaturesSection {...featuresProps} />
-          <div style={{ border: 'none', borderTop: '1px solid var(--dsw-alias-border-l2)' }} />
-          <VisionSettingsSection {...visionProps} />
+          {multimodalOn && (
+            <>
+              <div style={{ border: 'none', borderTop: '1px solid var(--dsw-alias-border-l2)' }} />
+              <VisionSettingsSection {...visionProps} />
+            </>
+          )}
         </div>
       )}
     </li>

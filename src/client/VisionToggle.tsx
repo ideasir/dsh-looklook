@@ -16,6 +16,8 @@ export interface VisionToggleInjected {
   useSnapshot: (selector: (state: EyeController['store']['getSnapshot'] extends () => infer S ? S : never) => unknown) => unknown
   /** Bound translate for the `looklook` namespace. */
   t: TranslateNS<'looklook'>
+  /** Reactive multimodal master switch (false hides the eye entirely). */
+  useMultimodal: () => boolean
 }
 
 /** The active/inactive/warning rendering states. */
@@ -52,9 +54,12 @@ function EyeGlyph({ off, warning }: { off: boolean; warning: boolean }) {
 export function VisionToggle(
   props: VisionToggleInjected,
 ) {
-  const { controller, useSnapshot, t } = props
+  const { controller, useSnapshot, useMultimodal, t } = props
+  // Both hooks run on every render so the hook order stays stable.
+  const multimodalOn = useMultimodal()
   const state = useSnapshot((s: { status: string; eye?: 'on' | 'off'; unconfigured?: boolean }) => s) as
     { status: 'loading' | 'ready'; eye: 'on' | 'off'; unconfigured: boolean }
+  if (!multimodalOn) return null
   const eye = state.status === 'ready' ? state.eye : 'on'
   const unconfigured = state.status === 'ready' && state.unconfigured === true
   const visual = eyeVisualState(state.status, eye, unconfigured)

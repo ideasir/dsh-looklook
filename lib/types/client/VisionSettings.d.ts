@@ -42,4 +42,4 @@ export interface ProviderDraft {
 /** Derive a credential reference for one provider id. */
 export declare function credentialRefFor(id: string): string;
 /** The settings section body, styled like the Models page. */
-export declare function VisionSettingsSection(props: VisionSettingsInjected): import("react").JSX.Element;
+export declare function VisionSettingsSection(props: VisionSettingsInjected): import("react").JSX.Element | null;

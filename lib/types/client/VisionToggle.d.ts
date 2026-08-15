@@ -14,10 +14,12 @@ export interface VisionToggleInjected {
     useSnapshot: (selector: (state: EyeController['store']['getSnapshot'] extends () => infer S ? S : never) => unknown) => unknown;
     /** Bound translate for the `looklook` namespace. */
     t: TranslateNS<'looklook'>;
+    /** Reactive multimodal master switch (false hides the eye entirely). */
+    useMultimodal: () => boolean;
 }
 /** The active/inactive/warning rendering states. */
 export type EyeVisualState = 'on' | 'off' | 'unconfigured';
 /** Decide the visual state from one store snapshot. */
 export declare function eyeVisualState(status: 'loading' | 'ready', eye: 'on' | 'off', unconfigured: boolean): EyeVisualState;
 /** Render the eye toggle button. */
-export declare function VisionToggle(props: VisionToggleInjected): import("react").JSX.Element;
+export declare function VisionToggle(props: VisionToggleInjected): import("react").JSX.Element | null;

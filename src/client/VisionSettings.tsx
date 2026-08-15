@@ -144,16 +144,10 @@ const layout = {
 
 /** The settings section body, styled like the Models page. */
 export function VisionSettingsSection(props: VisionSettingsInjected) {
-  const { t, useMultimodal } = props
+  const { useMultimodal } = props
   const multimodalOn = useMultimodal()
-  if (!multimodalOn) {
-    return (
-      <div style={layout.section}>
-        <h2 style={layout.title}>{t('settings.nav')}</h2>
-        <p style={layout.hint}>{t('vision.disabled')}</p>
-      </div>
-    )
-  }
+  // Multimodal OFF: the whole vision section (including its heading) is gone.
+  if (!multimodalOn) return null
   return <VisionSettingsBody {...props} />
 }
 
