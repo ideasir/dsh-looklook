@@ -37,7 +37,28 @@ export function FileChips(props: FileChipsInjected) {
   const list = files ?? []
   if (list.length === 0) return null
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+    <div
+      style={{
+        boxSizing: 'border-box',
+        width: 'calc(100% - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset))',
+        maxWidth: 'calc(var(--dsh-composer-card-max-width) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset))',
+        margin: '0 auto calc(0px - var(--dsh-composer-stack-gap) - 3px)',
+        padding: '0 var(--dsh-composer-dock-inset)',
+        flex: 'none',
+      }}
+    >
+    <div
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 8,
+        padding: '6px 10px',
+        borderRadius: '12px 12px 0 0',
+        background: 'var(--dsw-specific-tip)',
+        border: '1px solid var(--dsw-alias-border-l1)',
+        borderBottom: 'none',
+      }}
+    >
       {list.map((file, index) => (
         <span
           key={file.path}
@@ -85,6 +106,7 @@ export function FileChips(props: FileChipsInjected) {
           </button>
         </span>
       ))}
+    </div>
     </div>
   )
 }
