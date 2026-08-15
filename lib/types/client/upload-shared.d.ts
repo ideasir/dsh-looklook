@@ -9,7 +9,10 @@
 export declare const ACCEPT_EXTENSIONS: string[];
 /** Whether a file name is uploadable through the looklook channel. */
 export declare function isUploadableName(name: string): boolean;
-/** Convert a File's bytes to a base64 string (chunked to avoid stack blowups). */
+/**
+ * Convert a File to a base64 data string asynchronously via FileReader, so a
+ * large file never blocks the UI thread with a synchronous btoa loop.
+ */
 export declare function fileToBase64(file: File): Promise<string>;
 /** Upload one file; returns the absolute path the host saved. */
 export declare function uploadFile(sessionId: string, file: File): Promise<{

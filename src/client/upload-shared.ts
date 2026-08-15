@@ -15,15 +15,25 @@ export function isUploadableName(name: string): boolean {
   return ACCEPT_EXTENSIONS.some(ext => lower.endsWith(ext))
 }
 
-/** Convert a File's bytes to a base64 string (chunked to avoid stack blowups). */
-export async function fileToBase64(file: File): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  let binary = ''
-  const chunk = 0x8000
-  for (let offset = 0; offset < bytes.length; offset += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk))
-  }
-  return btoa(binary)
+/**
+ * Convert a File to a base64 data string asynchronously via FileReader, so a
+ * large file never blocks the UI thread with a synchronous btoa loop.
+ */
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolveBody, rejectBody) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result
+      if (typeof result !== 'string') {
+        rejectBody(new Error('读取文件失败'))
+        return
+      }
+      const comma = result.indexOf(',')
+      resolveBody(comma >= 0 ? result.slice(comma + 1) : result)
+    }
+    reader.onerror = () => rejectBody(new Error('读取文件失败'))
+    reader.readAsDataURL(file)
+  })
 }
 
 /** Upload one file; returns the absolute path the host saved. */

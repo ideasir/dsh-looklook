@@ -18,9 +18,11 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createEyeController, type EyeController } from './eye-controller.ts'
 import { createFeatureController, type FeatureController } from './feature-controller.ts'
+import { createPendingFilesController, type PendingFilesController } from './pending-files.ts'
 import { LooklookUserMessageNodeView } from './UserMessageNodeView.tsx'
 import { LooklookPluginCard, type LooklookCardInjected } from './PluginTab.tsx'
 import { VisionToggle, type VisionToggleInjected } from './VisionToggle.tsx'
+import { FileChips, type FileChipsInjected } from './FileChips.tsx'
 import { isUploadableName, uploadFiles } from './upload-shared.ts'
 import { en, zh, type LookLookKey } from './locales.ts'
 
@@ -37,6 +39,7 @@ const NS = 'looklook'
 /** Slot entry ids. */
 const PLUGIN_CARD_ID = 'looklook'
 const TOGGLE_ID = 'looklook-eye'
+const PENDING_ID = 'looklook-pending'
 
 /** Required services: slots, locale, connection, remote, sessions. */
 export const inject = ['slots', 'locale', 'connection', 'remote', 'sessions']
@@ -55,20 +58,41 @@ export function apply(ctx: ClientContext): void {
       sessionId?: string
       hooks?: Record<string, unknown>
       props?: Record<string, unknown>
-    } | undefined }
+    } | undefined; subscribe(fn: () => void): () => void }
   }
 
-  /** Stage uploaded file notes into the current input draft (no send). */
-  const stageIntoDraft = (notes: string[]): void => {
-    if (notes.length === 0) return
+  // Pending staged files (uploaded, waiting for the user to press Enter).
+  const pending: PendingFilesController = createPendingFilesController()
+  const usePending = bindSnapshotSelector(pending.store)
+
+  /** Merge staged file notes into the outgoing message right before submit. */
+  const wrapSubmit = (): void => {
     const current = sessions.currentProvideInfo.getSnapshot()
-    const inputState = current?.hooks?.input as { getSnapshot(): { draft?: string } } | undefined
-    const inputActions = current?.props?.inputActions as { setDraft?: (text: string) => void } | undefined
-    if (inputActions?.setDraft === undefined) return
-    const draft = inputState?.getSnapshot()?.draft ?? ''
-    const note = notes.join('\n')
-    inputActions.setDraft(draft === '' ? note : `${draft}\n${note}`)
+    const sessionId = current?.sessionId
+    const actions = current?.props?.inputActions as {
+      submit?: () => void
+      setDraft?: (text: string) => void
+    } | undefined
+    if (sessionId === undefined || actions?.submit === undefined || actions?.setDraft === undefined) return
+    const wrapped = actions as { __looklookWrapped?: boolean; submit?: () => void }
+    if (wrapped.__looklookWrapped === true) return
+    wrapped.__looklookWrapped = true
+    const originalSubmit = actions.submit.bind(actions)
+    const setDraft = actions.setDraft
+    wrapped.submit = () => {
+      const staged = pending.get(sessionId)
+      if (staged.length > 0) {
+        const notes = staged.map(f => t('upload.message', { name: f.name, path: f.path })).join('\n')
+        const inputState = current?.hooks?.input as { getSnapshot(): { draft?: string } } | undefined
+        const draft = inputState?.getSnapshot()?.draft ?? ''
+        setDraft(draft === '' ? notes : `${draft}\n${notes}`)
+        pending.clear(sessionId)
+      }
+      originalSubmit()
+    }
   }
+  sessions.currentProvideInfo.subscribe(wrapSubmit)
+  wrapSubmit()
 
   const eyes = new Map<string, EyeController>()
   const eyeFor = (sessionId: string): EyeController => {
@@ -225,11 +249,21 @@ export function apply(ctx: ClientContext): void {
       if (sessionId === undefined || sessionId === '') return
       event.preventDefault()
       event.stopPropagation()
-      // Upload now, stage the paths into the draft — nothing is sent until
-      // the user presses Enter (like image attachments).
+      // Upload now and show the file as a pending attachment chip — nothing
+      // is sent until the user presses Enter (like image attachments); the
+      // submit wrapper merges the paths into the outgoing message.
       void (async () => {
-        const notes = await uploadFiles(sessionId, files, (name, path) => t('upload.message', { name, path }))
-        stageIntoDraft(notes)
+        const results = await Promise.all(files.map(async (file) => {
+          try {
+            const { path } = await import('./upload-shared.ts').then(m => m.uploadFile(sessionId, file))
+            return { name: file.name, path, size: file.size }
+          } catch {
+            return null
+          }
+        }))
+        for (const result of results) {
+          if (result !== null) pending.add(sessionId, result)
+        }
       })()
     }
     document.addEventListener('dragover', onDragOverCapture, true)
@@ -239,6 +273,13 @@ export function apply(ctx: ClientContext): void {
       document.removeEventListener('drop', onDropCapture, true)
     }
   }, 'dsh-looklook: archive/video drag-and-drop')
+
+  // Pending file chips (like image attachments, removable, sent on Enter).
+  ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
+    name: 'conversation.composer.dock',
+    id: PENDING_ID,
+    inject: (sessionId: string): FileChipsInjected => ({ t, pending, usePending, sessionId }),
+  }, FileChips))
 
   // Per-session eye toggle.
   ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
