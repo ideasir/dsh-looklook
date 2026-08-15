@@ -1,8 +1,8 @@
 /**
  * dsh-looklook client face:
  * - the looklook entry inside the Plugins settings section (master switches +
- *   7z install + conditional vision-model config);
- * - the composer "上传文件" control and drag-and-drop of archive/video files;
+ *   conditional vision-model config);
+ * - drag-and-drop of archive/video files straight into the dialog;
  * - the per-session eye toggle and the original-image message view.
  */
 
@@ -21,7 +21,6 @@ import { createFeatureController, type FeatureController } from './feature-contr
 import { LooklookUserMessageNodeView } from './UserMessageNodeView.tsx'
 import { LooklookPluginCard, type LooklookCardInjected } from './PluginTab.tsx'
 import { VisionToggle, type VisionToggleInjected } from './VisionToggle.tsx'
-import { UploadButton, type UploadInjected } from './UploadButton.tsx'
 import { isUploadableName, uploadAndSend } from './upload-shared.ts'
 import { en, zh, type LookLookKey } from './locales.ts'
 
@@ -38,7 +37,6 @@ const NS = 'looklook'
 /** Slot entry ids. */
 const PLUGIN_CARD_ID = 'looklook'
 const TOGGLE_ID = 'looklook-eye'
-const UPLOAD_ID = 'looklook-upload'
 
 /** Required services: slots, locale, connection, remote, sessions. */
 export const inject = ['slots', 'locale', 'connection', 'remote', 'sessions']
@@ -73,9 +71,6 @@ export function apply(ctx: ClientContext): void {
   const useFeaturesSnapshot = bindSnapshotSelector(features.store)
   const useMultimodal = (): boolean => useFeaturesSnapshot(
     (s: { status: string; multimodal?: boolean }) => s.status === 'ready' && s.multimodal !== false,
-  ) as boolean
-  const useMoreExtensions = (): boolean => useFeaturesSnapshot(
-    (s: { status: string; moreExtensions?: boolean }) => s.status === 'ready' && s.moreExtensions !== false,
   ) as boolean
   const useFeatures = (): import('./feature-controller.ts').FeatureState => useFeaturesSnapshot(
     (s: import('./feature-controller.ts').FeatureState) => s,
@@ -186,13 +181,6 @@ export function apply(ctx: ClientContext): void {
     order: 30,
     inject: (): LooklookCardInjected => ({ api: connection.api, t, features, useFeatures, listModels, useMultimodal }),
   }, LooklookPluginCard))
-
-  // Composer upload control (archives + video), gated by the zip toggle.
-  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
-    name: 'conversation.input.left',
-    id: UPLOAD_ID,
-    inject: (sessionId: string): UploadInjected => ({ api: connection.api, t, useMoreExtensions, sessionId }),
-  }, UploadButton))
 
   // Drag-and-drop of archive/video files onto the page: intercept in the
   // CAPTURE phase (before the built-in image-only drop handler in bubble

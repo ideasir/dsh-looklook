@@ -1,8 +1,8 @@
 /**
  * dsh-looklook client face:
  * - the looklook entry inside the Plugins settings section (master switches +
- *   7z install + conditional vision-model config);
- * - the composer "上传文件" control and drag-and-drop of archive/video files;
+ *   conditional vision-model config);
+ * - drag-and-drop of archive/video files straight into the dialog;
  * - the per-session eye toggle and the original-image message view.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client';
