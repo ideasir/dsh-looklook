@@ -144,7 +144,7 @@ const layout = {
 
 /** The settings section body, styled like the Models page. */
 export function VisionSettingsSection(props: VisionSettingsInjected) {
-  const { api, t, listModels, useMultimodal } = props
+  const { t, useMultimodal } = props
   const multimodalOn = useMultimodal()
   if (!multimodalOn) {
     return (
@@ -154,6 +154,16 @@ export function VisionSettingsSection(props: VisionSettingsInjected) {
       </div>
     )
   }
+  return <VisionSettingsBody {...props} />
+}
+
+/**
+ * The full vision-config editor. Every state hook lives here, so the hook
+ * order stays consistent for as long as the component is mounted (it only
+ * mounts while multimodal is ON — the wrapper above decides).
+ */
+function VisionSettingsBody(props: VisionSettingsInjected) {
+  const { api, t, listModels } = props
   const [providers, setProviders] = useState<ProviderDraft[]>([])
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
