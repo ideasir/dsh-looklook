@@ -279,9 +279,10 @@ export function apply(ctx: ClientContext): void {
     }
   }, 'dsh-looklook: archive/video drag-and-drop')
 
-  // Pending file chips (like image attachments, removable, sent on Enter).
-  ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
-    name: 'conversation.composer.dock',
+  // Pending file chips (like image attachments, removable, sent on Enter),
+  // rendered above the composer card (input.dock), where image thumbnails go.
+  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+    name: 'conversation.input.dock',
     id: PENDING_ID,
     inject: (sessionId: string): FileChipsInjected => ({ t, pending, usePending, sessionId }),
   }, FileChips))

@@ -37,7 +37,13 @@ export function createPendingFilesController(): PendingFilesController {
     },
     remove: (sessionId, index) => {
       const next = get(sessionId).filter((_, i) => i !== index)
-      store.set({ ...store.getSnapshot(), ...(next.length > 0 ? { [sessionId]: next } : {}) })
+      const state = { ...store.getSnapshot() }
+      if (next.length > 0) {
+        state[sessionId] = next
+      } else {
+        delete state[sessionId]
+      }
+      store.set(state)
     },
     clear: (sessionId) => {
       store.set({ ...store.getSnapshot(), ...{ [sessionId]: [] } })
