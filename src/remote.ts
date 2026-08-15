@@ -15,10 +15,10 @@ export type LooklookListModelsResult =
   | { ok: false; error: string }
 
 /** Credential-bearing fetch: fail before following any redirect. */
-const FETCH_OPTIONS = {
-  redirect: 'error' as const,
-  signal: AbortSignal.timeout(10_000),
-}
+/** Fail before following any redirect. The signal is created per call: an
+ * `AbortSignal.timeout()` starts its timer at creation, so a module-level
+ * signal is permanently aborted ten seconds after load. */
+const FETCH_REDIRECT = 'error' as const
 
 /**
  * Host service answering `remote.looklook.listModels`. Extends
@@ -58,7 +58,9 @@ export class LooklookRemoteService extends TypertRemoteService {
     try {
       const url = `${provider.baseURL.trim().replace(/\/+$/, '')}/models`
       const response = await fetch(url, {
-        ...FETCH_OPTIONS,
+        redirect: FETCH_REDIRECT,
+        // Fresh per call: an AbortSignal.timeout starts ticking at creation.
+        signal: AbortSignal.timeout(10_000),
         headers: { authorization: `Bearer ${key}` },
       })
       if (!response.ok) {
