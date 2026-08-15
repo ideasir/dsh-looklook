@@ -397,7 +397,19 @@ export function VisionSettingsSection(props: VisionSettingsInjected) {
       )}
 
       {providers.map(provider => (
-        <div key={provider.id} style={layout.card}>
+        <div
+          key={provider.id}
+          style={{ ...layout.card, cursor: 'pointer' }}
+          role="button"
+          tabIndex={0}
+          onClick={() => setEditingId(provider.id)}
+          onKeyDown={event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              setEditingId(provider.id)
+            }
+          }}
+        >
           <div style={layout.rowHead}>
             <span style={layout.rowIdentity}>
               <span style={layout.rowName}>{provider.name || provider.id}</span>
@@ -405,7 +417,7 @@ export function VisionSettingsSection(props: VisionSettingsInjected) {
                 ? <span style={layout.rowTag}>{t('settings.provider.primary')}</span>
                 : <span style={layout.rowTag}>{t('settings.provider.fallback')}</span>}
             </span>
-            <span style={layout.rowActions}>
+            <span style={{ ...layout.rowActions, cursor: 'default' }} onClick={event => event.stopPropagation()}>
               <StateDot state={keyStates[provider.id] ? 'done' : 'warning'} />
               <Button
                 variant="ghost" size="sm" aria-label={t('settings.provider.moveUp')}

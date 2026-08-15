@@ -27,11 +27,18 @@ export interface FeaturesInjected {
 
 const css = {
   stack: { display: 'flex', flexDirection: 'column', gap: 14, color: 'var(--dsw-alias-label-primary)' },
+  section: { display: 'flex', flexDirection: 'column', gap: 10 },
+  heading: {
+    fontSize: 12,
+    lineHeight: '18px',
+    fontWeight: 600,
+    color: 'var(--dsw-alias-label-secondary)',
+    letterSpacing: '0.02em',
+  },
   row: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 },
   rowText: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 },
   rowName: { fontSize: 14, lineHeight: '22px', fontWeight: 500, color: 'var(--dsw-alias-label-primary)' },
   rowDesc: { fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' },
-  divider: { border: 'none', borderTop: '1px solid var(--dsw-alias-border-l2)', margin: '4px 0' },
   installRow: { display: 'flex', alignItems: 'center', gap: 10 },
   hint: { margin: 0, fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' },
   error: { margin: 0, fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-state-warn-label)' },
@@ -129,56 +136,57 @@ export function LooklookFeaturesSection(props: FeaturesInjected) {
 
   return (
     <div style={css.stack}>
-      <SwitchRow
-        label={t('features.extensions.label')}
-        desc={t('features.extensions.desc')}
-        checked={ready && state.moreExtensions}
-        onChange={next => features.setMoreExtensions(next)}
-      />
-      <SwitchRow
-        label={t('features.multimodal.label')}
-        desc={t('features.multimodal.desc')}
-        checked={ready && state.multimodal}
-        onChange={next => features.setMultimodal(next)}
-      />
-
-      <hr style={css.divider} />
-
-      <div style={css.installRow}>
-        <span style={css.rowText}>
-          <span style={css.rowName}>{t('features.install.header')}</span>
-          <span style={css.rowDesc}>{t('features.install.desc')}</span>
-        </span>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={sevenZ.status === 'checking' || sevenZ.status === 'installing'}
-          onClick={() => {
-            if (sevenZ.status === 'ready' && sevenZ.installed) return
-            void (async () => {
-              setSevenZ({ status: 'installing' })
-              try {
-                const result = await requestSevenZInstall()
-                setSevenZ({ status: 'ready', installed: result.installed })
-              } catch (error) {
-                setSevenZ({ status: 'error', message: error instanceof Error ? error.message : String(error) })
-              }
-            })()
-          }}
-        >
-          {sevenZ.status === 'ready' && sevenZ.installed
-            ? t('features.install.installed')
-            : sevenZ.status === 'installing'
-              ? t('features.install.installing')
-              : sevenZ.status === 'checking'
-                ? t('features.install.checking')
-                : t('features.install.button')}
-        </Button>
+      <div style={css.section}>
+        <span style={css.heading}>{t('features.switches.heading')}</span>
+        <SwitchRow
+          label={t('features.extensions.label')}
+          desc={t('features.extensions.desc')}
+          checked={ready && state.moreExtensions}
+          onChange={next => features.setMoreExtensions(next)}
+        />
+        <SwitchRow
+          label={t('features.multimodal.label')}
+          desc={t('features.multimodal.desc')}
+          checked={ready && state.multimodal}
+          onChange={next => features.setMultimodal(next)}
+        />
       </div>
-      {sevenZ.status === 'error' && <span style={css.error}>{sevenZ.message}</span>}
-      {sevenZ.status === 'ready' && !sevenZ.installed && (
-        <span style={css.hint}>{t('features.install.missingHint')}</span>
-      )}
+
+      <div style={css.section}>
+        <span style={css.heading}>{t('features.install.header')}</span>
+        <div style={css.installRow}>
+          <span style={css.rowDesc}>{t('features.install.desc')}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={sevenZ.status === 'checking' || sevenZ.status === 'installing'}
+            onClick={() => {
+              if (sevenZ.status === 'ready' && sevenZ.installed) return
+              void (async () => {
+                setSevenZ({ status: 'installing' })
+                try {
+                  const result = await requestSevenZInstall()
+                  setSevenZ({ status: 'ready', installed: result.installed })
+                } catch (error) {
+                  setSevenZ({ status: 'error', message: error instanceof Error ? error.message : String(error) })
+                }
+              })()
+            }}
+          >
+            {sevenZ.status === 'ready' && sevenZ.installed
+              ? t('features.install.installed')
+              : sevenZ.status === 'installing'
+                ? t('features.install.installing')
+                : sevenZ.status === 'checking'
+                  ? t('features.install.checking')
+                  : t('features.install.button')}
+          </Button>
+        </div>
+        {sevenZ.status === 'error' && <span style={css.error}>{sevenZ.message}</span>}
+        {sevenZ.status === 'ready' && !sevenZ.installed && (
+          <span style={css.hint}>{t('features.install.missingHint')}</span>
+        )}
+      </div>
     </div>
   )
 }

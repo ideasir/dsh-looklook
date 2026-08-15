@@ -97,6 +97,7 @@ export function LooklookPluginCard(props: LooklookCardInjected) {
       {open && (
         <div style={css.body}>
           <LooklookFeaturesSection {...featuresProps} />
+          <div style={{ border: 'none', borderTop: '1px solid var(--dsw-alias-border-l2)' }} />
           <VisionSettingsSection {...visionProps} />
         </div>
       )}

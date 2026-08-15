@@ -37,6 +37,7 @@ export declare const zh: {
     'card.desc': string;
     'card.expand': string;
     'card.collapse': string;
+    'features.switches.heading': string;
     'features.extensions.label': string;
     'features.extensions.desc': string;
     'features.multimodal.label': string;
@@ -95,6 +96,7 @@ export declare const en: {
     'card.desc': string;
     'card.expand': string;
     'card.collapse': string;
+    'features.switches.heading': string;
     'features.extensions.label': string;
     'features.extensions.desc': string;
     'features.multimodal.label': string;
