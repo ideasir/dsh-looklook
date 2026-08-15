@@ -21,7 +21,7 @@ import { createFeatureController, type FeatureController } from './feature-contr
 import { LooklookUserMessageNodeView } from './UserMessageNodeView.tsx'
 import { LooklookPluginCard, type LooklookCardInjected } from './PluginTab.tsx'
 import { VisionToggle, type VisionToggleInjected } from './VisionToggle.tsx'
-import { isUploadableName, uploadAndSend } from './upload-shared.ts'
+import { isUploadableName, uploadFiles } from './upload-shared.ts'
 import { en, zh, type LookLookKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -51,7 +51,23 @@ export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
   const connection = ctx.get('connection') as ConnectionHandle
   const sessions = ctx.get('sessions') as {
-    currentProvideInfo: { getSnapshot(): { sessionId?: string } | undefined }
+    currentProvideInfo: { getSnapshot(): {
+      sessionId?: string
+      hooks?: Record<string, unknown>
+      props?: Record<string, unknown>
+    } | undefined }
+  }
+
+  /** Stage uploaded file notes into the current input draft (no send). */
+  const stageIntoDraft = (notes: string[]): void => {
+    if (notes.length === 0) return
+    const current = sessions.currentProvideInfo.getSnapshot()
+    const inputState = current?.hooks?.input as { getSnapshot(): { draft?: string } } | undefined
+    const inputActions = current?.props?.inputActions as { setDraft?: (text: string) => void } | undefined
+    if (inputActions?.setDraft === undefined) return
+    const draft = inputState?.getSnapshot()?.draft ?? ''
+    const note = notes.join('\n')
+    inputActions.setDraft(draft === '' ? note : `${draft}\n${note}`)
   }
 
   const eyes = new Map<string, EyeController>()
@@ -209,7 +225,12 @@ export function apply(ctx: ClientContext): void {
       if (sessionId === undefined || sessionId === '') return
       event.preventDefault()
       event.stopPropagation()
-      void uploadAndSend(connection.api, sessionId, files, (name, path) => t('upload.message', { name, path }))
+      // Upload now, stage the paths into the draft — nothing is sent until
+      // the user presses Enter (like image attachments).
+      void (async () => {
+        const notes = await uploadFiles(sessionId, files, (name, path) => t('upload.message', { name, path }))
+        stageIntoDraft(notes)
+      })()
     }
     document.addEventListener('dragover', onDragOverCapture, true)
     document.addEventListener('drop', onDropCapture, true)

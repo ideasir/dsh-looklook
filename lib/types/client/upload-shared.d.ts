@@ -1,10 +1,10 @@
 /**
  * Shared upload logic for dsh-looklook: upload one or more archive/video
  * files through the plugin's `/api/looklook-upload` route (saved into the
- * session workspace `.uploads/`), then send a normal user message carrying
- * every file path so the model can process them.
+ * session workspace `.uploads/`) and return their paths. The caller stages
+ * the notes into the input draft — nothing is sent until the user presses
+ * Enter.
  */
-import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client';
 /** Accepted extensions (archives + video). */
 export declare const ACCEPT_EXTENSIONS: string[];
 /** Whether a file name is uploadable through the looklook channel. */
@@ -17,10 +17,9 @@ export declare function uploadFile(sessionId: string, file: File): Promise<{
     name: string;
 }>;
 /**
- * Upload every file and send one user message listing the paths.
- * @returns the number of successfully uploaded files.
+ * Upload every file and return the saved paths WITHOUT sending anything —
+ * the caller stages the note into the input draft, so nothing is sent until
+ * the user presses Enter.
+ * @returns the successfully saved file notes (name + path lines).
  */
-export declare function uploadAndSend(api: IApiClient, sessionId: string, files: File[], buildNote: (name: string, path: string) => string): Promise<{
-    ok: number;
-    failed: number;
-}>;
+export declare function uploadFiles(sessionId: string, files: File[], buildNote: (name: string, path: string) => string): Promise<string[]>;

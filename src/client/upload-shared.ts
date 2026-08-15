@@ -1,11 +1,10 @@
 /**
  * Shared upload logic for dsh-looklook: upload one or more archive/video
  * files through the plugin's `/api/looklook-upload` route (saved into the
- * session workspace `.uploads/`), then send a normal user message carrying
- * every file path so the model can process them.
+ * session workspace `.uploads/`) and return their paths. The caller stages
+ * the notes into the input draft — nothing is sent until the user presses
+ * Enter.
  */
-
-import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
 
 /** Accepted extensions (archives + video). */
 export const ACCEPT_EXTENSIONS = ['.zip', '.7z', '.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v']
@@ -43,32 +42,24 @@ export async function uploadFile(sessionId: string, file: File): Promise<{ path:
 }
 
 /**
- * Upload every file and send one user message listing the paths.
- * @returns the number of successfully uploaded files.
+ * Upload every file and return the saved paths WITHOUT sending anything —
+ * the caller stages the note into the input draft, so nothing is sent until
+ * the user presses Enter.
+ * @returns the successfully saved file notes (name + path lines).
  */
-export async function uploadAndSend(
-  api: IApiClient,
+export async function uploadFiles(
   sessionId: string,
   files: File[],
   buildNote: (name: string, path: string) => string,
-): Promise<{ ok: number; failed: number }> {
+): Promise<string[]> {
   const lines: string[] = []
-  let failed = 0
   for (const file of files) {
     try {
       const { path } = await uploadFile(sessionId, file)
       lines.push(buildNote(file.name, path))
     } catch {
-      failed += 1
+      // skip failed files silently; the successful ones still stage
     }
   }
-  if (lines.length > 0) {
-    const text = lines.join('\n')
-    await api.sessions.prompt({
-      sessionId: sessionId as never,
-      mode: 'queue' as never,
-      content: [{ type: 'text', text }] as never,
-    } as never)
-  }
-  return { ok: lines.length, failed }
+  return lines
 }
