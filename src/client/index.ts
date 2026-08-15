@@ -249,6 +249,10 @@ export function apply(ctx: ClientContext): void {
       if (sessionId === undefined || sessionId === '') return
       event.preventDefault()
       event.stopPropagation()
+      // We intercepted the drop, so the built-in handler never runs its
+      // reset() — dispatch a dragend so the full-page drop overlay (the
+      // frosted mask) dismisses instead of sticking.
+      window.dispatchEvent(new DragEvent('dragend'))
       // Upload now and show the file as a pending attachment chip — nothing
       // is sent until the user presses Enter (like image attachments); the
       // submit wrapper merges the paths into the outgoing message.
