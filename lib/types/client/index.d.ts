@@ -13,7 +13,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
         looklook: LookLookKey;
     }
 }
-/** Required services: slots, locale, connection, remote, sessions. */
+/** Required services: slots, locale, connection, remote, sessions, conversation. */
 export declare const inject: string[];
 /**
  * Client plugin body: register the looklook Plugins-settings tab, the

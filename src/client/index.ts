@@ -41,8 +41,8 @@ const PLUGIN_CARD_ID = 'looklook'
 const TOGGLE_ID = 'looklook-eye'
 const PENDING_ID = 'looklook-pending'
 
-/** Required services: slots, locale, connection, remote, sessions. */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'sessions']
+/** Required services: slots, locale, connection, remote, sessions, conversation. */
+export const inject = ['slots', 'locale', 'connection', 'remote', 'sessions', 'conversation']
 
 /**
  * Client plugin body: register the looklook Plugins-settings tab, the
@@ -65,23 +65,31 @@ export function apply(ctx: ClientContext): void {
   const pending: PendingFilesController = createPendingFilesController()
   const usePending = bindSnapshotSelector(pending.store)
 
-  /** Merge staged file notes into the outgoing message right before submit. */
+  /**
+   * Patch the session input SHELL's submit (both Enter and the send button
+   * route through it — keyboard.submit and actions.submit both call
+   * shell.submit) so staged file notes are merged into the outgoing message.
+   */
   const wrapSubmit = (): boolean => {
     const current = sessions.currentProvideInfo.getSnapshot()
     const sessionId = current?.sessionId
-    const actions = current?.props?.inputActions as {
-      submit?: () => void
-      setDraft?: (text: string) => void
+    if (sessionId === undefined) return false
+    const conversation = ctx.get('conversation') as {
+      input?: { shell?: (id: string) => {
+        state?: { getSnapshot(): { draft?: string } }
+        setDraft?: (text: string) => void
+        submit?: (mode?: string) => void
+      } }
     } | undefined
-    if (sessionId === undefined || actions?.submit === undefined || actions?.setDraft === undefined) {
-      return false
-    }
-    const wrapped = actions as { __looklookWrapped?: boolean; submit?: () => void }
+    const shell = conversation?.input?.shell?.(sessionId)
+    if (shell?.submit === undefined || shell?.setDraft === undefined) return false
+    const wrapped = shell as { __looklookWrapped?: boolean; submit?: (mode?: string) => void }
     if (wrapped.__looklookWrapped === true) return true
     wrapped.__looklookWrapped = true
-    const originalSubmit = actions.submit.bind(actions)
-    const setDraft = actions.setDraft
-    wrapped.submit = () => {
+    const originalSubmit = shell.submit.bind(shell)
+    const setDraft = shell.setDraft
+    const readDraft = (): string => shell.state?.getSnapshot()?.draft ?? ''
+    wrapped.submit = (mode?: string) => {
       try {
         const staged = pending.get(sessionId)
         if (staged.length > 0) {
@@ -92,8 +100,7 @@ export function apply(ctx: ClientContext): void {
             const meta = JSON.stringify({ name: f.name, path: f.path, size: f.size })
             return `【looklook:开始】${visible}【looklook:结束】\n【looklook:file】${meta}【looklook:file】`
           }).join('\n')
-          const inputState = current?.hooks?.input as { getSnapshot(): { draft?: string } } | undefined
-          const draft = inputState?.getSnapshot()?.draft ?? ''
+          const draft = readDraft()
           setDraft(draft === '' ? notes : `${draft}\n${notes}`)
           pending.clear(sessionId)
         }
@@ -101,7 +108,7 @@ export function apply(ctx: ClientContext): void {
         // Never let the merge break sending — the original submit must run.
         console.error('looklook submit merge failed:', error)
       }
-      originalSubmit()
+      originalSubmit(mode)
     }
     return true
   }
