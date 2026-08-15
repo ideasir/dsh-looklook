@@ -3,18 +3,18 @@
  * the chat renders the ORIGINAL image the user sent, even though the session
  * record only carries the plugin's rewritten text (rc.6 rewrites the record).
  *
- * The host embeds a full image-reference JSON in the marker 「【附图:{...}】」
- * and wraps its model-facing tool-reference text in
- * 「【looklook:开始】…【looklook:结束】」 (hidden from the user). This view
- * renders the image with the harness's native ImageGallery (click to enlarge
- * in the lightbox) and shows only the user's own question text. Native image
- * blocks (multimodal models / newer harnesses) render the same way. The
- * component is defensive: unexpected shapes fall back to plain text.
+ * Thumbnail rule (fixed size): square → 220×220; landscape → height 220;
+ * portrait → width 220 (aspect-preserving, never upscaled). Click opens the
+ * native lightbox. The host embeds a full image-reference JSON in the marker
+ * 「【附图:{...}】」 and wraps its model-facing tool-reference text in
+ * 「【looklook:开始】…【looklook:结束】」 (hidden from the user). Defensive:
+ * unexpected shapes fall back to plain text, never crashing the chat.
  */
 
-import { ImageGallery } from '@deepseek-ai/dsh-client-ui-attachment'
+import { useEffect, useState } from 'react'
+import { ImageLightbox } from '@deepseek-ai/dsh-client-ui-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { MessageImageLabels } from '@deepseek-ai/dsh-client-ui-attachment'
+import type { ImageLoader, ImageLightboxLabels } from '@deepseek-ai/dsh-client-ui-attachment'
 
 /** The host's attachment marker: 「【附图:<ref-json-or-id>】」. */
 const IMAGE_MARKER_RE = /【附图:([^】]+)】/g
@@ -23,14 +23,55 @@ const IMAGE_MARKER_RE = /【附图:([^】]+)】/g
 const HIDE_START = '【looklook:开始】'
 const HIDE_END = '【looklook:结束】'
 
-/** Chinese labels for the native image gallery + lightbox. */
-const IMAGE_LABELS: MessageImageLabels = {
-  image: '图片',
-  open: '查看原图',
-  openNamed: (label) => '查看原图：' + label,
-  loading: '加载中…',
-  loadFailed: '加载失败，点击重试',
-  lightbox: { dialog: '图片预览', close: '关闭预览' },
+/** Thumbnail fixed dimension (short side cap). */
+const THUMB_MAX = 220
+
+/** Lightbox strings. */
+const LIGHTBOX_LABELS: ImageLightboxLabels = { dialog: '图片预览', close: '关闭预览' }
+
+/** Compute the thumbnail box: square 220×220; landscape height 220; portrait
+ * width 220; never upscale (natural size when smaller). Missing metadata falls
+ * back to a 220 square. */
+function thumbSize(width?: number, height?: number): { width: number; height: number } {
+  if (typeof width !== 'number' || typeof height !== 'number' || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return { width: THUMB_MAX, height: THUMB_MAX }
+  }
+  const shortSide = Math.min(width, height)
+  if (shortSide >= THUMB_MAX) {
+    const scale = THUMB_MAX / shortSide
+    return { width: Math.round(width * scale), height: Math.round(height * scale) }
+  }
+  return { width, height }
+}
+
+/** One fixed-size thumbnail with click-to-open lightbox. */
+function LooklookThumb({ ref, load }: { ref: ImageAttachmentRef; load: ImageLoader }) {
+  const [src, setSrc] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    let live = true
+    setSrc(null)
+    load(ref).then((url) => { if (live) setSrc(url) }).catch(() => { /* unavailable */ })
+    return () => { live = false }
+  }, [ref, load])
+  const box = thumbSize(ref.width, ref.height)
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => { if (src !== null) setOpen(true) }}
+        aria-label="查看原图"
+        style={{ padding: 0, border: 0, background: 'none', cursor: 'pointer', lineHeight: 0 }}
+      >
+        {src === null
+          ? <div style={{ ...box, borderRadius: 8, background: 'rgba(128,128,128,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontSize: 12, lineHeight: 1.4 }}>加载中…</div>
+          : <img src={src} alt="图片" style={{ ...box, objectFit: 'cover', borderRadius: 8, display: 'block' }} />}
+      </button>
+      {open && src !== null && (
+        <ImageLightbox src={src} alt="图片" labels={LIGHTBOX_LABELS} onClose={() => setOpen(false)} />
+      )}
+    </>
+  )
 }
 
 /** Remove every host hidden range (tool references are model-facing only). */
@@ -69,6 +110,37 @@ function parseMarkerRef(raw: string): ImageAttachmentRef {
   return { attachmentId: trimmed } as ImageAttachmentRef
 }
 
+/** The host's image-reference JSON embedded in the hidden tool text. */
+const REF_JSON_RE = /(\{"attachmentId":"[^"]+","mediaType":"[^"]+","bytes":\d+,"width":\d+,"height":\d+\})/g
+
+/**
+ * Collect every image reference embedded in the raw (pre-strip) text, keyed
+ * by attachmentId. Lets legacy bare-id markers also render at their true
+ * aspect ratio (the full ref lives in the hidden tool-reference text).
+ */
+function collectEmbeddedRefs(rawText: string): Map<string, ImageAttachmentRef> {
+  const map = new Map<string, ImageAttachmentRef>()
+  for (const match of rawText.matchAll(REF_JSON_RE)) {
+    const raw = match[1]
+    if (raw === undefined) continue
+    try {
+      const parsed = JSON.parse(raw) as Partial<ImageAttachmentRef>
+      if (typeof parsed?.attachmentId === 'string' && parsed.attachmentId.length > 0) {
+        map.set(parsed.attachmentId, {
+          attachmentId: parsed.attachmentId,
+          mediaType: typeof parsed.mediaType === 'string' ? parsed.mediaType as ImageAttachmentRef['mediaType'] : 'image/png' as ImageAttachmentRef['mediaType'],
+          bytes: typeof parsed.bytes === 'number' ? parsed.bytes : 0,
+          width: typeof parsed.width === 'number' ? parsed.width : 0,
+          height: typeof parsed.height === 'number' ? parsed.height : 0,
+        })
+      }
+    } catch {
+      /* skip malformed ref */
+    }
+  }
+  return map
+}
+
 interface ContentBlockLike {
   type?: string
   text?: unknown
@@ -81,9 +153,8 @@ interface UserMessageNodeProps {
 }
 
 /**
- * Defensive user-message renderer: renders the image (marker/native) with the
- * native gallery + lightbox, shows only the user's own text; falls back to
- * plain text on unexpected shapes.
+ * Defensive user-message renderer: fixed-size thumbnails + native lightbox,
+ * only the user's own text shown; falls back to plain text on unexpected shapes.
  */
 export function LooklookUserMessageNodeView(props: UserMessageNodeProps) {
   const content = props.node?.data?.content
@@ -95,17 +166,22 @@ export function LooklookUserMessageNodeView(props: UserMessageNodeProps) {
   }
   const texts: string[] = []
   const attachments: ImageAttachmentRef[] = []
+  const rawBlocks: string[] = []
   for (const raw of content) {
     const block = raw as ContentBlockLike
     if (block?.type === 'text' && typeof block.text === 'string') {
+      rawBlocks.push(block.text)
       texts.push(stripHidden(block.text))
     } else if (block?.type === 'image' && typeof block.attachment?.attachmentId === 'string') {
       attachments.push(block.attachment as ImageAttachmentRef)
     }
   }
+  const embeddedRefs = collectEmbeddedRefs(rawBlocks.join(''))
   const joined = texts.join('')
   const cleaned = joined.replace(IMAGE_MARKER_RE, (_all, payload: string) => {
-    attachments.push(parseMarkerRef(payload))
+    const parsed = parseMarkerRef(payload)
+    const withMeta = embeddedRefs.get(parsed.attachmentId)
+    attachments.push(withMeta ?? parsed)
     return ''
   })
   const trimmed = cleaned.trim()
@@ -114,12 +190,9 @@ export function LooklookUserMessageNodeView(props: UserMessageNodeProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, margin: '8px 0' }}>
       {attachments.length > 0 && (
-        <ImageGallery
-          images={attachments.map(attachment => ({ attachment }))}
-          load={load}
-          align="end"
-          labels={IMAGE_LABELS}
-        />
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
+          {attachments.map((ref) => <LooklookThumb key={ref.attachmentId} ref={ref} load={load} />)}
+        </div>
       )}
       {trimmed.length > 0 && (
         <div style={{
