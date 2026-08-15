@@ -42,13 +42,6 @@ export declare const zh: {
     'features.extensions.desc': string;
     'features.multimodal.label': string;
     'features.multimodal.desc': string;
-    'features.install.header': string;
-    'features.install.desc': string;
-    'features.install.button': string;
-    'features.install.installed': string;
-    'features.install.installing': string;
-    'features.install.checking': string;
-    'features.install.missingHint': string;
     'upload.title': string;
     'upload.unsupported': string;
     'upload.failed': string;
@@ -101,13 +94,6 @@ export declare const en: {
     'features.extensions.desc': string;
     'features.multimodal.label': string;
     'features.multimodal.desc': string;
-    'features.install.header': string;
-    'features.install.desc': string;
-    'features.install.button': string;
-    'features.install.installed': string;
-    'features.install.installing': string;
-    'features.install.checking': string;
-    'features.install.missingHint': string;
     'upload.title': string;
     'upload.unsupported': string;
     'upload.failed': string;

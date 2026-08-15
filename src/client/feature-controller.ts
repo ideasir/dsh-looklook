@@ -64,29 +64,3 @@ export function createFeatureController(api: IApiClient): FeatureController {
     setMoreExtensions: (next) => { void update({ moreExtensions: next }) },
   }
 }
-
-/** 7z support state. */
-export type SevenZState =
-  | { status: 'unknown' }
-  | { status: 'checking' }
-  | { status: 'ready'; installed: boolean }
-  | { status: 'installing' }
-  | { status: 'error'; message: string }
-
-/** Query the 7z install state through the plugin's HTTP routes. */
-export async function fetchSevenZStatus(): Promise<{ installed: boolean }> {
-  const response = await fetch('/api/looklook-7z-status', { method: 'GET' })
-  if (!response.ok) throw new Error(`7z status HTTP ${response.status}`)
-  const body = await response.json() as { ok?: boolean; installed?: boolean; error?: string }
-  if (body.ok !== true) throw new Error(body.error ?? '7z 状态查询失败')
-  return { installed: body.installed === true }
-}
-
-/** Trigger the 7z install through the plugin's HTTP route. */
-export async function requestSevenZInstall(): Promise<{ ok: boolean; installed: boolean; output: string }> {
-  const response = await fetch('/api/looklook-7z-install', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
-  if (!response.ok) throw new Error(`7z install HTTP ${response.status}`)
-  const body = await response.json() as { ok?: boolean; installed?: boolean; error?: string; output?: string }
-  if (body.ok !== true) throw new Error(body.error ?? '7z 安装失败')
-  return { ok: true, installed: body.installed === true, output: body.output ?? '' }
-}

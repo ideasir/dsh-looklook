@@ -1,20 +1,16 @@
 /**
  * dsh-looklook/upload — host-side upload support.
  *
- * - POST /api/looklook-upload — save one uploaded file into the session's
- *   workspace `.uploads/` directory (500 MB cap, extension whitelist:
- *   archives + video). Returns the absolute path so the client can tell the
- *   model where the file landed.
- * - GET  /api/looklook-7z-status — whether the 7z CLI is installed.
- * - POST /api/looklook-7z-install — install p7zip-full via apt (user-triggered
- *   from the plugin settings page).
+ * POST /api/looklook-upload — save one uploaded file into the session's
+ * workspace `.uploads/` directory (500 MB cap, extension whitelist:
+ * archives + video). Returns the absolute path so the client can tell the
+ * model where the file landed.
  *
- * These are standard webServer routes (registered like any other `/api`
- * route), so no DSH source is modified.
+ * A standard webServer route (registered like any other `/api` route), so
+ * no DSH source is modified.
  */
 
-import { spawn } from 'node:child_process'
-import { mkdir, writeFile, stat } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, extname, join, resolve } from 'node:path'
 import { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
@@ -91,29 +87,6 @@ export function isAllowedUploadName(name: string, moreExtensions: boolean): bool
   return (BASE_EXTENSIONS as readonly string[]).includes(ext)
 }
 
-// ── 7z helpers ──
-
-/** Whether the 7z CLI is available on PATH. */
-export function is7zInstalled(): Promise<boolean> {
-  return new Promise((done) => {
-    spawn('7z', ['i'], { stdio: 'ignore' })
-      .on('error', () => done(false))
-      .on('exit', (code) => done(code === 0))
-  })
-}
-
-/** Install p7zip-full via apt (best effort). */
-export function install7z(): Promise<{ ok: boolean; output: string }> {
-  return new Promise((done) => {
-    const child = spawn('apt-get', ['install', '-y', '-qq', 'p7zip-full'], { stdio: ['ignore', 'pipe', 'pipe'] })
-    let output = ''
-    child.stdout?.on('data', (chunk: Buffer) => { output += chunk.toString() })
-    child.stderr?.on('data', (chunk: Buffer) => { output += chunk.toString() })
-    child.on('error', (error) => done({ ok: false, output: String(error.message) }))
-    child.on('exit', (code) => done({ ok: code === 0, output: output.slice(0, 2000) }))
-  })
-}
-
 // ── Route registration ──
 
 export interface UploadRequest {
@@ -180,27 +153,4 @@ export function registerUploadRoutes(ctx: Context, features: LooklookScope): voi
     },
   })
 
-  webServer.register({
-    kind: 'exact',
-    path: '/api/looklook-7z-status',
-    handler: async (_req, res) => {
-      const installed = await is7zInstalled()
-      sendJson(res, 200, { ok: true, installed })
-    },
-  })
-
-  webServer.register({
-    kind: 'exact',
-    path: '/api/looklook-7z-install',
-    handler: async (req, res) => {
-      if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'method not allowed' })
-      try {
-        const result = await install7z()
-        const installed = await is7zInstalled()
-        sendJson(res, 200, { ok: result.ok && installed, installed, output: result.output })
-      } catch (error) {
-        sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) })
-      }
-    },
-  })
 }

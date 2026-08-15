@@ -1,16 +1,13 @@
 /**
  * dsh-looklook/upload — host-side upload support.
  *
- * - POST /api/looklook-upload — save one uploaded file into the session's
- *   workspace `.uploads/` directory (500 MB cap, extension whitelist:
- *   archives + video). Returns the absolute path so the client can tell the
- *   model where the file landed.
- * - GET  /api/looklook-7z-status — whether the 7z CLI is installed.
- * - POST /api/looklook-7z-install — install p7zip-full via apt (user-triggered
- *   from the plugin settings page).
+ * POST /api/looklook-upload — save one uploaded file into the session's
+ * workspace `.uploads/` directory (500 MB cap, extension whitelist:
+ * archives + video). Returns the absolute path so the client can tell the
+ * model where the file landed.
  *
- * These are standard webServer routes (registered like any other `/api`
- * route), so no DSH source is modified.
+ * A standard webServer route (registered like any other `/api` route), so
+ * no DSH source is modified.
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { LooklookScope } from './settings.ts';
@@ -28,13 +25,6 @@ export declare function isArchiveName(name: string): boolean;
 export declare function isVideoName(name: string): boolean;
 /** Whether the name passes the extension whitelist for the given policy. */
 export declare function isAllowedUploadName(name: string, moreExtensions: boolean): boolean;
-/** Whether the 7z CLI is available on PATH. */
-export declare function is7zInstalled(): Promise<boolean>;
-/** Install p7zip-full via apt (best effort). */
-export declare function install7z(): Promise<{
-    ok: boolean;
-    output: string;
-}>;
 export interface UploadRequest {
     sessionId: string;
     name: string;

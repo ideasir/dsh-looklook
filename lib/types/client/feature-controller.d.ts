@@ -22,27 +22,3 @@ export interface FeatureController {
 }
 /** Create the plugin feature controller. */
 export declare function createFeatureController(api: IApiClient): FeatureController;
-/** 7z support state. */
-export type SevenZState = {
-    status: 'unknown';
-} | {
-    status: 'checking';
-} | {
-    status: 'ready';
-    installed: boolean;
-} | {
-    status: 'installing';
-} | {
-    status: 'error';
-    message: string;
-};
-/** Query the 7z install state through the plugin's HTTP routes. */
-export declare function fetchSevenZStatus(): Promise<{
-    installed: boolean;
-}>;
-/** Trigger the 7z install through the plugin's HTTP route. */
-export declare function requestSevenZInstall(): Promise<{
-    ok: boolean;
-    installed: boolean;
-    output: string;
-}>;

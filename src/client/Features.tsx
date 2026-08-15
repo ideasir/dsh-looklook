@@ -6,12 +6,9 @@
  * Plus the 7z install support row.
  */
 
-import { useEffect, useState } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { FeatureController, FeatureState, SevenZState } from './feature-controller.ts'
-import { fetchSevenZStatus, requestSevenZInstall } from './feature-controller.ts'
+import type { FeatureController, FeatureState } from './feature-controller.ts'
 
 /** Injected face supplied by the plugin apply closure. */
 export interface FeaturesInjected {
@@ -40,8 +37,6 @@ const css = {
   rowName: { fontSize: 14, lineHeight: '22px', fontWeight: 500, color: 'var(--dsw-alias-label-primary)' },
   rowDesc: { fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' },
   installRow: { display: 'flex', alignItems: 'center', gap: 10 },
-  hint: { margin: 0, fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' },
-  error: { margin: 0, fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-state-warn-label)' },
 } as const
 
 /** Slider-style switch (track + knob), smooth spring motion, perfectly centered knob. */
@@ -115,23 +110,6 @@ function SwitchRow({ label, desc, checked, onChange }: {
 export function LooklookFeaturesSection(props: FeaturesInjected) {
   const { t, features, useFeatures } = props
   const state = useFeatures()
-  const [sevenZ, setSevenZ] = useState<SevenZState>({ status: 'unknown' })
-
-  const refreshSevenZ = async (): Promise<void> => {
-    setSevenZ({ status: 'checking' })
-    try {
-      const { installed } = await fetchSevenZStatus()
-      setSevenZ({ status: 'ready', installed })
-    } catch (error) {
-      setSevenZ({ status: 'error', message: error instanceof Error ? error.message : String(error) })
-    }
-  }
-
-  useEffect(() => {
-    void refreshSevenZ()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   const ready = state.status === 'ready'
 
   return (
@@ -150,42 +128,6 @@ export function LooklookFeaturesSection(props: FeaturesInjected) {
           checked={ready && state.multimodal}
           onChange={next => features.setMultimodal(next)}
         />
-      </div>
-
-      <div style={css.section}>
-        <span style={css.heading}>{t('features.install.header')}</span>
-        <div style={css.installRow}>
-          <span style={css.rowDesc}>{t('features.install.desc')}</span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={sevenZ.status === 'checking' || sevenZ.status === 'installing'}
-            onClick={() => {
-              if (sevenZ.status === 'ready' && sevenZ.installed) return
-              void (async () => {
-                setSevenZ({ status: 'installing' })
-                try {
-                  const result = await requestSevenZInstall()
-                  setSevenZ({ status: 'ready', installed: result.installed })
-                } catch (error) {
-                  setSevenZ({ status: 'error', message: error instanceof Error ? error.message : String(error) })
-                }
-              })()
-            }}
-          >
-            {sevenZ.status === 'ready' && sevenZ.installed
-              ? t('features.install.installed')
-              : sevenZ.status === 'installing'
-                ? t('features.install.installing')
-                : sevenZ.status === 'checking'
-                  ? t('features.install.checking')
-                  : t('features.install.button')}
-          </Button>
-        </div>
-        {sevenZ.status === 'error' && <span style={css.error}>{sevenZ.message}</span>}
-        {sevenZ.status === 'ready' && !sevenZ.installed && (
-          <span style={css.hint}>{t('features.install.missingHint')}</span>
-        )}
       </div>
     </div>
   )

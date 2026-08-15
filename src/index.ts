@@ -144,6 +144,6 @@ export function apply(ctx: Context, config: VisionSettings): void {
   registerZipTool(ctx)
 
   // Upload channel (archives + video, extension whitelist graded by the
-  // moreExtensions switch) and the 7z install support routes.
+  // moreExtensions switch).
   registerUploadRoutes(ctx, features)
 }
