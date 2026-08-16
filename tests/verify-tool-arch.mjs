@@ -22,7 +22,7 @@ for (;;) {
 const ids = [...out.matchAll(/【附图:([^】]+)】/g)].map(m => JSON.parse(m[1]));
 console.log("after client strip:", JSON.stringify(out));
 if (ids.length !== 1 || ids[0].attachmentId !== "sha256:abc") throw new Error("client round trip failed");
-if (out.includes("looklook_describe")) throw new Error("hidden text not stripped");
+if (out.includes("looklook_see")) throw new Error("hidden text not stripped");
 
 // 3) rewriteImagesToToolReferences populates registry + replaces images
 const registry = new Map();
@@ -56,7 +56,7 @@ console.log("tools registered:", tools.map(t => t.name));
 console.log("system prompts:", prompts.map(p => p.name));
 console.log("events:", handlers.map(h => h[0]).join(", "));
 const names = tools.map(t => t.name);
-if (names.length !== 3 || !names.includes("looklook_describe") || !names.includes("process_zip") || !names.includes("looklook_watch")) {
+if (names.length !== 2 || !names.includes("looklook_see") || !names.includes("process_zip")) {
   throw new Error("tools not registered: " + names.join(", "));
 }
 if (prompts.length < 2) throw new Error("system prompts missing");

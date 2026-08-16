@@ -589,7 +589,7 @@ def main():
         return
 
     # ---- transcript: subtitles first; else leave audio for the host ASR ----
-    # The host (looklook_watch tool) owns speech-to-text: it calls an
+    # The host (looklook_see tool) owns speech-to-text: it calls an
     # OpenAI-compatible /v1/audio/transcriptions endpoint with the audio file
     # this worker prepares. Subtitles (platform or embedded) are still
     # extracted here because they are free and more accurate than ASR.

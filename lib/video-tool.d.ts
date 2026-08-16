@@ -1,5 +1,5 @@
 /**
- * dsh-looklook/video — the `looklook_watch` tool: understand a video, whether
+ * dsh-looklook/video — the `looklook_see` video branch: understand a video, whether
  * it was uploaded as a local file (session `.uploads/`) or referenced by a
  * URL (Bilibili / YouTube / Douyin / generic via the vendored Python worker).
  *
@@ -23,5 +23,9 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { AudioScope, VisionScope } from './settings.ts';
-/** Register the looklook_watch tool. */
-export declare function registerWatchTool(ctx: Context, audioScope: AudioScope, visionScope: VisionScope, videoRecognitionEnabled: () => boolean): void;
+/**
+ * Watch and analyze a video (local file path or URL) — the video branch of
+ * the unified looklook_see tool.
+ * @returns the composed report text (or a failure message).
+ */
+export declare function watchVideo(ctx: Context, audioScope: AudioScope, visionScope: VisionScope, videoRecognitionEnabled: () => boolean, source: string, question: string, signal: AbortSignal): Promise<string>;

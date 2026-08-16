@@ -25,9 +25,8 @@ import type { SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session/types'
 import { Config, LooklookConfig, AudioConfig, looklookFeatures, eyeStateFor, type VisionSettings, type VisionScope, type LooklookScope, type AudioScope } from './settings.ts'
 import { replaceImagesWithPlaceholder, rewriteImagesToToolReferences } from './translate.ts'
-import { registerDescribeTool } from './describe-tool.ts'
+import { registerSeeTool } from './see-tool.ts'
 import { registerZipTool } from './zip-tool.ts'
-import { registerWatchTool } from './video-tool.ts'
 import { registerUploadRoutes } from './upload.ts'
 import { registerAsrInstallRoutes } from './asr-install.ts'
 import { LooklookRemoteService } from './remote.ts'
@@ -79,23 +78,22 @@ export function apply(ctx: Context, config: VisionSettings): void {
   ctx.plugin(LooklookRemoteService)
 
   // Exact image references as they arrive (attachmentId → full ref), so the
-  // describe tool can read images by the reference the user message carries.
+  // see tool can read images by the reference the user message carries.
   const refRegistry = new Map<string, ImageAttachmentRef>()
 
-  // The "eyes" of the pseudo-native multimodal model (runtime-gated on the
-  // image recognition toggle, so switching it in settings applies without restart).
-  registerDescribeTool(ctx, scope, refRegistry, features)
+  // The unified "look at anything" tool (image / video / zip branches).
+  registerSeeTool(ctx, scope, audioScope, features, refRegistry, videoRecognitionEnabled)
 
-  // Tell the main model how to see images and how uploads land.
+  // Tell the main model how to see content and how uploads land.
   ctx.systemPrompt.section({
     name: 'looklook:vision',
     order: 200,
-    text: '用户消息中的图片内容对你不可见。当需要了解用户图片的内容时，必须调用 looklook_describe 工具：把用户消息中的图片引用原样填入 image_ref，并根据用户的实际问题决定 question 的内容（用户问什么就针对性地问什么，不要一律要求全量描述）。',
+    text: '用户消息中的图片内容对你不可见。当需要了解用户图片的内容时，必须调用 looklook_see 工具：把用户消息中的图片引用原样填入 source，并根据用户的实际问题决定 question 的内容（用户问什么就针对性地问什么，不要一律要求全量描述）。',
   })
   ctx.systemPrompt.section({
     name: 'looklook:files',
     order: 205,
-    text: '用户上传的文件（压缩包、视频等）会保存到会话工作区的 .uploads/ 目录，上传时消息里会带有文件路径。处理压缩包用 process_zip 工具（list / extract / read_entry）；理解视频用 looklook_watch 工具（传入本地文件路径或视频链接）；处理其它文件用 bash/fs 工具。',
+    text: '用户上传的文件（压缩包、视频等）会保存到会话工作区的 .uploads/ 目录，上传时消息里会带有文件路径。理解任何内容（图片、视频、压缩包内容）用 looklook_see 工具（source 填文件路径或链接）；解压压缩包用 process_zip 工具（extract）；处理其它文件用 bash/fs 工具。',
   })
 
   // rc.6 admission override: the api-proxy's hardcoded text-only refusal
@@ -151,12 +149,9 @@ export function apply(ctx: Context, config: VisionSettings): void {
     return { ...request, messages }
   })
 
-  // ZIP processing tool (vendored from dsh-zip), always available.
+  // ZIP extraction tool (vendored from dsh-zip): extract operation only —
+  // the "look at zip contents" branch lives in looklook_see.
   registerZipTool(ctx)
-
-  // Video understanding: looklook_watch (local file or URL; vendored worker),
-  // gated by the video-recognition switch.
-  registerWatchTool(ctx, audioScope, scope, videoRecognitionEnabled)
 
   // Upload channel: any file type (no whitelist — installing the plugin
   // unlocks every upload).

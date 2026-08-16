@@ -3,7 +3,7 @@
  *
  * Pseudo-native multimodal: the plugin does NOT translate images up front.
  * It replaces each image with a machine-readable image reference the MAIN
- * MODEL can pass to the `looklook_describe` tool, plus an attachment marker
+ * MODEL can pass to the `looklook_see` tool, plus an attachment marker
  * so the plugin's client renders the original image in the chat. The main
  * model decides what to ask the vision model (targeted question or full
  * description, based on the user's question) — no hardcoded rules here.
@@ -26,7 +26,7 @@ export declare const HIDE_END = "\u3010looklook:\u7ED3\u675F\u3011";
 export declare function imageMarker(ref: ImageAttachmentRef): string;
 /**
  * Build the model-visible text for one image: a hidden-from-display tool
- * reference (the main model uses it to call `looklook_describe`) plus the
+ * reference (the main model uses it to call `looklook_see`) plus the
  * visible attachment marker that makes the client render the image.
  */
 export declare function buildImageToolReference(image: ImageBlock): string;
