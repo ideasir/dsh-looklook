@@ -1,7 +1,7 @@
 {
   "name": "dsh-looklook",
-  "version": "0.1.0",
-  "description": "Vision-assist plugin for DeepSeek Harness (dsh-looklook): translates images for text-only conversation models via a configurable vision model, with per-session eye toggle and primary/fallback provider degradation.",
+  "version": "0.2.0",
+  "description": "Look at anything for DeepSeek Harness (dsh-looklook): unified looklook_see tool for images, videos (frames + audio understanding) and archives; OpenAI-compatible vision/audio model config with capability probing, plus a one-click local ASR install.",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
