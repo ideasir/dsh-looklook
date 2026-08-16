@@ -1,8 +1,9 @@
 /**
  * FileChips: pending archive/video attachments rendered in the composer dock
  * — one chip per staged file (icon + name + size), a delete × on hover.
- * The files are already uploaded; pressing Enter merges their path notes into
- * the outgoing message (the submit wrapper in index.ts).
+ * The files are already uploaded; pressing Enter (or the send button) merges
+ * their path notes into the outgoing message — the submit patch in index.ts
+ * does the merge, so there is no separate "send attachment" action.
  */
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots';
 import type { PendingFilesController, PendingFilesState } from './pending-files.ts';
@@ -16,12 +17,6 @@ export interface FileChipsInjected {
     usePending: (selector: (state: PendingFilesState) => unknown) => unknown;
     /** The current session id (injected by the slot owner). */
     sessionId: string;
-    /** Send every pending file right now (reliable prompt path). */
-    onSend: () => void;
-    /** Whether a send is in flight. */
-    sending: boolean;
-    /** Visible send error (or null). */
-    sendError: string | null;
 }
 /** One chip card (hover reveals the remove ×). */
 export declare function FileChips(props: FileChipsInjected): import("react").JSX.Element | null;

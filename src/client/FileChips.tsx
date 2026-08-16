@@ -1,8 +1,9 @@
 /**
  * FileChips: pending archive/video attachments rendered in the composer dock
  * — one chip per staged file (icon + name + size), a delete × on hover.
- * The files are already uploaded; pressing Enter merges their path notes into
- * the outgoing message (the submit wrapper in index.ts).
+ * The files are already uploaded; pressing Enter (or the send button) merges
+ * their path notes into the outgoing message — the submit patch in index.ts
+ * does the merge, so there is no separate "send attachment" action.
  */
 
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -19,17 +20,11 @@ export interface FileChipsInjected {
   usePending: (selector: (state: PendingFilesState) => unknown) => unknown
   /** The current session id (injected by the slot owner). */
   sessionId: string
-  /** Send every pending file right now (reliable prompt path). */
-  onSend: () => void
-  /** Whether a send is in flight. */
-  sending: boolean
-  /** Visible send error (or null). */
-  sendError: string | null
 }
 
 /** One chip card (hover reveals the remove ×). */
 export function FileChips(props: FileChipsInjected) {
-  const { t, pending, usePending, sessionId, onSend, sending, sendError } = props
+  const { t, pending, usePending, sessionId } = props
   // Selector returns the stable stored array (or undefined) — never allocate
   // a fresh value, or the reactive hook re-renders forever.
   const files = usePending((state: PendingFilesState) => state[sessionId]) as
@@ -52,6 +47,7 @@ export function FileChips(props: FileChipsInjected) {
       style={{
         display: 'flex',
         flexWrap: 'wrap',
+        alignItems: 'center',
         gap: 8,
         padding: '6px 10px',
         borderRadius: '12px 12px 0 0',
@@ -60,30 +56,6 @@ export function FileChips(props: FileChipsInjected) {
         borderBottom: 'none',
       }}
     >
-      <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-        {sendError !== null && (
-          <span style={{ fontSize: 12, color: 'var(--dsw-alias-state-warn-label)' }}>{sendError}</span>
-        )}
-        <button
-          type="button"
-          disabled={sending}
-          onClick={onSend}
-          style={{
-            flex: 'none',
-            padding: '2px 10px',
-            border: '1px solid var(--dsw-alias-border-l2)',
-            borderRadius: 999,
-            background: 'var(--dsw-alias-button-elevated-fill)',
-            cursor: sending ? 'default' : 'pointer',
-            fontSize: 12,
-            lineHeight: '18px',
-            color: 'var(--dsw-alias-label-primary)',
-            opacity: sending ? 0.6 : 1,
-          }}
-        >
-          {sending ? t('upload.sending') : t('upload.send')}
-        </button>
-      </span>
       {list.map((file, index) => (
         <span
           key={file.path}
@@ -131,6 +103,9 @@ export function FileChips(props: FileChipsInjected) {
           </button>
         </span>
       ))}
+      <span style={{ marginLeft: 'auto', fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' }}>
+        {t('upload.enterToSend')}
+      </span>
     </div>
     </div>
   )

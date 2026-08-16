@@ -42,8 +42,7 @@ export const zh = {
   'features.multimodal.label': '支持多模态',
   'features.multimodal.desc': '开启后支持图片识别，并显示视觉模型配置；关闭后图片回到 DSH 原生行为。',
   'upload.remove': '移除附件',
-  'upload.send': '发送附件',
-  'upload.sending': '发送中…',
+  'upload.enterToSend': '按发送键一并发送',
   'upload.message': '上传了文件 {name} → {path}',
 } satisfies Record<string, string>
 
@@ -92,7 +91,6 @@ export const en = {
   'features.multimodal.label': 'Multimodal',
   'features.multimodal.desc': 'When ON, image recognition is available and the vision-model configuration is shown; when OFF images fall back to native DSH behavior.',
   'upload.remove': 'Remove attachment',
-  'upload.send': 'Send attachment',
-  'upload.sending': 'Sending…',
+  'upload.enterToSend': 'Sends with the message',
   'upload.message': 'Uploaded file {name} → {path}',
 } satisfies Record<LookLookKey, string>

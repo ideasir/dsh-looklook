@@ -41,8 +41,7 @@ export declare const zh: {
     'features.multimodal.label': string;
     'features.multimodal.desc': string;
     'upload.remove': string;
-    'upload.send': string;
-    'upload.sending': string;
+    'upload.enterToSend': string;
     'upload.message': string;
 };
 /** The looklook namespace key union. */
@@ -89,7 +88,6 @@ export declare const en: {
     'features.multimodal.label': string;
     'features.multimodal.desc': string;
     'upload.remove': string;
-    'upload.send': string;
-    'upload.sending': string;
+    'upload.enterToSend': string;
     'upload.message': string;
 };

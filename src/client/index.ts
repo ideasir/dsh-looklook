@@ -18,7 +18,6 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createEyeController, type EyeController } from './eye-controller.ts'
 import { createFeatureController, type FeatureController } from './feature-controller.ts'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createPendingFilesController, type PendingFilesController } from './pending-files.ts'
 import { LooklookUserMessageNodeView } from './UserMessageNodeView.tsx'
 import { LooklookPluginCard, type LooklookCardInjected } from './PluginTab.tsx'
@@ -67,59 +66,79 @@ export function apply(ctx: ClientContext): void {
   const pending: PendingFilesController = createPendingFilesController()
   const usePending = bindSnapshotSelector(pending.store)
 
-  // Per-session send state (chip-panel button + visible errors).
-  const sendStore = createSnapshotStore<Record<string, { sending: boolean; error: string | null }>>({})
-  const useSendSnapshot = bindSnapshotSelector(sendStore)
-  const setSendState = (sessionId: string, next: { sending: boolean; error: string | null }): void => {
-    sendStore.set({ ...sendStore.getSnapshot(), [sessionId]: next })
-  }
-
-  /** Send every staged file for a session via the reliable prompt path. */
-  const sendPending = async (sessionId: string): Promise<void> => {
-    const staged = pending.get(sessionId)
-    if (staged.length === 0) return
-    setSendState(sessionId, { sending: true, error: null })
-    try {
-      const notes = staged.map(f => {
-        const visible = t('upload.message', { name: f.name, path: f.path })
-        const meta = JSON.stringify({ name: f.name, path: f.path, size: f.size })
-        return `【looklook:开始】${visible}【looklook:结束】\n【looklook:file】${meta}【looklook:file】`
-      }).join('\n')
-      // 1) Prefer merging into the current draft (keeps the user's question)
-      //    and submitting through the normal input actions.
-      const current = sessions.currentProvideInfo.getSnapshot()
-      const inputActions = current?.props?.inputActions as {
-        setDraft?: (text: string) => void
-        submit?: () => void
-      } | undefined
-      const inputState = current?.hooks?.input as { getSnapshot(): { draft?: string } } | undefined
-      if (inputActions?.setDraft !== undefined && inputActions?.submit !== undefined) {
-        const draft = inputState?.getSnapshot()?.draft ?? ''
-        inputActions.setDraft(draft === '' ? notes : `${draft}\n${notes}`)
-        inputActions.submit()
-        pending.clear(sessionId)
-        setSendState(sessionId, { sending: false, error: null })
-        return
-      }
-      // 2) Fallback: direct prompt with the file notes.
-      const sent = await connection.api.sessions.prompt({
-        sessionId: sessionId as never,
-        mode: 'queue' as never,
-        content: [{ type: 'text', text: notes }] as never,
-      } as never)
-      if (!sent.result.ok) throw new Error(sent.result.error.message)
-      pending.clear(sessionId)
-      setSendState(sessionId, { sending: false, error: null })
-    } catch (error) {
-      setSendState(sessionId, { sending: false, error: error instanceof Error ? error.message : String(error) })
-      console.error('looklook sendPending failed:', error)
-    }
+  /** Compose the model-facing + client-rendering notes for one staged file. */
+  const fileNote = (f: { name: string; path: string; size: number }): string => {
+    const visible = t('upload.message', { name: f.name, path: f.path })
+    const meta = JSON.stringify({ name: f.name, path: f.path, size: f.size })
+    return `【looklook:开始】${visible}【looklook:结束】\n【looklook:file】${meta}【looklook:file】`
   }
 
   /**
-   * Staged files are sent by the reliable panel button (merge into the draft
-   * + submit) or the direct prompt fallback; no submit monkey-patching.
+   * Merge every staged file's note into the current draft. Returns the
+   * merged draft text; the caller decides when to submit.
    */
+  const mergeNotesIntoDraft = (sessionId: string, draft: string): string => {
+    const staged = pending.get(sessionId)
+    if (staged.length === 0) return draft
+    const notes = staged.map(fileNote).join('\n')
+    pending.clear(sessionId)
+    return draft === '' ? notes : `${draft}\n${notes}`
+  }
+
+  /**
+   * Enter/send submit patch (per-session): every submit route — Enter via the
+   * keyboard, the send button via actions.submit — funnels through the
+   * session input shell's `submit()`. Wrap it once so staged files ride the
+   * outgoing message instead of needing a separate "send attachment" button.
+   */
+  const patchedSessions = new Set<string>()
+  const ensureSubmitPatched = (sessionId: string): void => {
+    if (patchedSessions.has(sessionId)) return
+    const actx = sessions.scope ? sessions.scope(sessionId) : undefined
+    if (actx === undefined) return
+    const conversation = actx.get?.('conversation') as {
+      input?: { for?: (scope: unknown) => unknown }
+    } | undefined
+    const shell = conversation?.input?.for?.(actx) as {
+      setDraft?: (text: string) => void
+      submit?: (mode?: string) => void
+      state?: { getSnapshot(): { draft?: string } }
+    } | undefined
+    if (shell?.submit === undefined || shell?.setDraft === undefined || shell?.state === undefined) return
+    const raw = shell as { __looklookWrapped?: boolean }
+    if (raw.__looklookWrapped === true) {
+      patchedSessions.add(sessionId)
+      return
+    }
+    raw.__looklookWrapped = true
+    const originalSubmit = shell.submit.bind(shell)
+    const setDraft = shell.setDraft.bind(shell)
+    const readDraft = (): string => shell.state?.getSnapshot()?.draft ?? ''
+    shell.submit = (mode?: string) => {
+      try {
+        const draft = readDraft()
+        const merged = mergeNotesIntoDraft(sessionId, draft)
+        if (merged !== draft) setDraft(merged)
+      } catch (error) {
+        // Never let the merge break sending — the original submit must run.
+        console.error('looklook submit merge failed:', error)
+      }
+      originalSubmit(mode)
+    }
+    patchedSessions.add(sessionId)
+  }
+
+  // Patch the current session's submit whenever the session changes, so the
+  // merge is always in place before the user presses Enter.
+  ctx.effect(() => {
+    const sync = (): void => {
+      const sessionId = sessions.currentProvideInfo.getSnapshot()?.sessionId
+      if (sessionId !== undefined && sessionId !== '') ensureSubmitPatched(sessionId)
+    }
+    const dispose = sessions.currentProvideInfo.subscribe(sync)
+    sync()
+    return () => { dispose() }
+  }, 'dsh-looklook: submit merge patch')
 
   const eyes = new Map<string, EyeController>()
   const eyeFor = (sessionId: string): EyeController => {
@@ -305,19 +324,15 @@ export function apply(ctx: ClientContext): void {
     }
   }, 'dsh-looklook: archive/video drag-and-drop')
 
-  // Pending file chips (like image attachments, removable, sent on Enter),
-  // rendered above the composer card (input.dock), where image thumbnails go.
+  // Pending file chips (like image attachments, removable, sent with the
+  // next Enter/send — the submit patch merges their notes), rendered above
+  // the composer card (input.dock), where image thumbnails go.
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
     name: 'conversation.input.dock',
     id: PENDING_ID,
     inject: (sessionId: string): FileChipsInjected => {
-      const state = useSendSnapshot((s) => s[sessionId]) as { sending?: boolean; error?: string | null } | undefined
-      return {
-        t, pending, usePending, sessionId,
-        onSend: () => { void sendPending(sessionId) },
-        sending: state?.sending === true,
-        sendError: state?.error ?? null,
-      }
+      ensureSubmitPatched(sessionId)
+      return { t, pending, usePending, sessionId }
     },
   }, FileChips))
 
