@@ -18,7 +18,8 @@ export interface ZipEntry {
   name: string
   isDirectory: boolean
   size?: number
-  modifiedAt?: Date
+  /** ISO timestamp string (lossless-JSON-safe; a Date object is not). */
+  modifiedAt?: string
 }
 
 export interface ZipExtractResult {
@@ -118,7 +119,7 @@ export class ZipStore {
       name: entry.entryName,
       isDirectory: entry.isDirectory,
       size: entry.isDirectory ? undefined : entry.header.size,
-      modifiedAt: entry.header.time ? new Date(entry.header.time) : undefined,
+      modifiedAt: entry.header.time ? new Date(entry.header.time).toISOString() : undefined,
     }))
   }
 
@@ -177,7 +178,7 @@ export class ZipStore {
         name: entry.entryName,
         isDirectory: entry.isDirectory,
         size: entry.isDirectory ? undefined : entry.header.size,
-        modifiedAt: entry.header.time ? new Date(entry.header.time) : undefined,
+        modifiedAt: entry.header.time ? new Date(entry.header.time).toISOString() : undefined,
       }))
 
       return {

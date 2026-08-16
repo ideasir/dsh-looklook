@@ -9,7 +9,8 @@ export interface ZipEntry {
     name: string;
     isDirectory: boolean;
     size?: number;
-    modifiedAt?: Date;
+    /** ISO timestamp string (lossless-JSON-safe; a Date object is not). */
+    modifiedAt?: string;
 }
 export interface ZipExtractResult {
     id: string;
