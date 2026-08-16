@@ -28,6 +28,10 @@ export interface LooklookCardInjected {
   useFeatures: () => FeatureState
   /** Probe one provider's `/models` endpoint through the host RPC. */
   listModels: ModelSettingsInjected['listModels']
+  /** Read the local ASR install state through the authorized RPC. */
+  asrStatus: ModelSettingsInjected['asrStatus']
+  /** Trigger the local ASR install through the authorized RPC. */
+  asrInstall: ModelSettingsInjected['asrInstall']
   /** Reactive snapshot of the image recognition master switch. */
   useImageRecognition: () => boolean
 }
@@ -73,12 +77,12 @@ const css = {
 
 /** The plugin-configuration card body. */
 export function LooklookPluginCard(props: LooklookCardInjected) {
-  const { api, t, features, useFeatures, listModels, useImageRecognition } = props
+  const { api, t, features, useFeatures, listModels, asrStatus, asrInstall, useImageRecognition } = props
   const [open, setOpen] = useState(false)
   // Hook order stays stable: both hooks run before any conditional return.
   const imageRecognitionOn = useImageRecognition()
   const featuresProps: FeaturesInjected = { api, t, features, useFeatures }
-  const modelProps: ModelSettingsInjected = { api, t, listModels }
+  const modelProps: ModelSettingsInjected = { api, t, listModels, asrStatus, asrInstall }
   const title = t('card.title')
   return (
     <li style={css.card}>

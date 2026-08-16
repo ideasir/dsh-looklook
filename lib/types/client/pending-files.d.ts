@@ -3,10 +3,16 @@
  * immediately (path known) and held here until the user presses Enter, when
  * their path notes are merged into the outgoing message — exactly like image
  * attachments (chip in the input, removable, sent with the request).
+ *
+ * Entries carry a stable `id` so upload callbacks can address them even when
+ * the user deletes another chip mid-upload (index-based addressing shifts on
+ * deletion and would write the path into the wrong chip).
  */
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client';
 /** One staged file awaiting send. While `uploading` is true, `path` is unset. */
 export interface PendingFile {
+    /** Stable per-entry id (never shifts when sibling chips are deleted). */
+    id: string;
     name: string;
     path?: string;
     size: number;
@@ -21,9 +27,9 @@ export type PendingFilesState = Record<string, PendingFile[]>;
 /** Per-plugin store: sessionId → staged files. */
 export interface PendingFilesController {
     store: SnapshotStore<PendingFilesState>;
-    add(sessionId: string, file: PendingFile): void;
-    update(sessionId: string, index: number, patch: Partial<PendingFile>): void;
-    remove(sessionId: string, index: number): void;
+    add(sessionId: string, file: Omit<PendingFile, 'id'>): void;
+    updateById(sessionId: string, id: string, patch: Partial<PendingFile>): void;
+    remove(sessionId: string, id: string): void;
     clear(sessionId: string): void;
     get(sessionId: string): PendingFile[];
 }

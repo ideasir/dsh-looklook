@@ -23,7 +23,7 @@ import { LooklookUserMessageNodeView } from './UserMessageNodeView.tsx'
 import { LooklookPluginCard, type LooklookCardInjected } from './PluginTab.tsx'
 import { VisionToggle, type VisionToggleInjected } from './VisionToggle.tsx'
 import { FileChips, type FileChipsInjected } from './FileChips.tsx'
-import { isUploadableName, uploadFile } from './upload-shared.ts'
+import { isUploadableName, uploadFile, type SessionModality } from './upload-shared.ts'
 import { en, zh, type LookLookKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -79,22 +79,21 @@ export function apply(ctx: ClientContext): void {
    * merged draft text; the caller decides when to submit.
    */
   const mergeNotesIntoDraft = (sessionId: string, draft: string): string => {
-    // Only fully-uploaded files (path set) are merged; a file still
-    // uploading stays in the chip row for the next Enter.
-    const staged = pending.get(sessionId).filter(f => f.path !== undefined && f.path !== '' && f.uploading !== true)
+    // Only fully-uploaded files (path set, no error) are merged; a file still
+    // uploading OR failed stays in the chip row so the error stays visible.
+    const staged = pending.get(sessionId).filter(
+      f => f.path !== undefined && f.path !== '' && f.uploading !== true && f.error === undefined,
+    )
     if (staged.length === 0) return draft
     const notes = staged.map(fileNote).join('\n')
-    const stillUploading = pending.get(sessionId).length !== staged.length
-    if (stillUploading) {
-      // Remove the merged ones, keep the uploading ones.
-      const remaining = pending.get(sessionId).filter(f => f.path === undefined || f.path === '' || f.uploading === true)
-      const state = { ...pending.store.getSnapshot() }
-      if (remaining.length > 0) state[sessionId] = remaining
-      else delete state[sessionId]
-      pending.store.set(state)
-    } else {
-      pending.clear(sessionId)
-    }
+    // Keep uploading/failed chips; drop only the merged (successful) ones.
+    const remaining = pending.get(sessionId).filter(
+      f => f.path === undefined || f.path === '' || f.uploading === true || f.error !== undefined,
+    )
+    const state = { ...pending.store.getSnapshot() }
+    if (remaining.length > 0) state[sessionId] = remaining
+    else delete state[sessionId]
+    pending.store.set(state)
     return draft === '' ? notes : `${draft}\n${notes}`
   }
 
@@ -214,28 +213,174 @@ export function apply(ctx: ClientContext): void {
     throw new Error('result must be { ok: true, models } or { ok: false, error }')
   }
 
-  // Model-discovery RPC: mount the `remote.looklook` namespace backed by the
-  // host LooklookRemoteService, so the settings page can probe `/models`.
+  /** Strict wire schema for the upload payload. */
+  const parseUploadPayload = (value: unknown): { sessionId: string; name: string; data: string } => {
+    if (typeof value !== 'object' || value === null) throw new Error('payload must be an object')
+    const record = value as Record<string, unknown>
+    if (typeof record.sessionId !== 'string' || typeof record.name !== 'string' || typeof record.data !== 'string') {
+      throw new Error('payload requires sessionId, name and data strings')
+    }
+    return { sessionId: record.sessionId, name: record.name, data: record.data }
+  }
+
+  /** Strict wire schema for the upload result. */
+  const parseUploadResult = (value: unknown): { ok: true; path: string; name: string; size: number } | { ok: false; error: string } => {
+    if (typeof value !== 'object' || value === null) throw new Error('result must be an object')
+    const record = value as Record<string, unknown>
+    if (record.ok === true && typeof record.path === 'string' && typeof record.name === 'string' && typeof record.size === 'number') {
+      return { ok: true, path: record.path, name: record.name, size: record.size }
+    }
+    if (record.ok === false && typeof record.error === 'string') return { ok: false, error: record.error }
+    throw new Error('result must be { ok: true, path, name, size } or { ok: false, error }')
+  }
+
+  /** Strict wire schema for the ASR status. */
+  const parseAsrStatus = (value: unknown): { installed: boolean; phase: string; model: string; error: string | null } => {
+    if (typeof value !== 'object' || value === null) throw new Error('status must be an object')
+    const record = value as Record<string, unknown>
+    if (typeof record.installed !== 'boolean' || typeof record.phase !== 'string') throw new Error('status requires installed and phase')
+    return {
+      installed: record.installed,
+      phase: record.phase,
+      model: typeof record.model === 'string' ? record.model : 'medium',
+      error: typeof record.error === 'string' ? record.error : null,
+    }
+  }
+
+  /** Strict wire schema for the ASR install trigger. */
+  const parseAsrInstallResult = (value: unknown): { ok: true; phase: string; already: boolean } | { ok: false; error: string } => {
+    if (typeof value !== 'object' || value === null) throw new Error('result must be an object')
+    const record = value as Record<string, unknown>
+    if (record.ok === true && typeof record.phase === 'string') {
+      return { ok: true, phase: record.phase, already: record.already === true }
+    }
+    if (record.ok === false && typeof record.error === 'string') return { ok: false, error: record.error }
+    throw new Error('result must be { ok: true, phase } or { ok: false, error }')
+  }
+
+  /** Strict wire schema for the session id argument. */
+  const parseSessionId = (value: unknown): string => {
+    if (typeof value !== 'string' || value === '') throw new Error('sessionId must be a non-empty string')
+    return value
+  }
+
+  /** Strict wire schema for the modality result. */
+  const parseModalityResult = (value: unknown): SessionModality => {
+    if (typeof value !== 'object' || value === null) throw new Error('result must be an object')
+    const record = value as Record<string, unknown>
+    if (record.ok === true && typeof record.supportsImage === 'boolean') {
+      return { ok: true, supportsImage: record.supportsImage }
+    }
+    if (record.ok === false && typeof record.error === 'string') return { ok: false, error: record.error }
+    throw new Error('result must be { ok: true, supportsImage } or { ok: false, error }')
+  }
+
+  /** Strict wire schema for the read-upload payload. */
+  const parseReadUploadPayload = (value: unknown): { sessionId: string; name: string } => {
+    if (typeof value !== 'object' || value === null) throw new Error('payload must be an object')
+    const record = value as Record<string, unknown>
+    if (typeof record.sessionId !== 'string' || typeof record.name !== 'string') {
+      throw new Error('payload requires sessionId and name strings')
+    }
+    return { sessionId: record.sessionId, name: record.name }
+  }
+
+  /** Strict wire schema for the read-upload result. */
+  const parseReadUploadResult = (value: unknown): { ok: true; mediaType: string; data: string } | { ok: false; error: string } => {
+    if (typeof value !== 'object' || value === null) throw new Error('result must be an object')
+    const record = value as Record<string, unknown>
+    if (record.ok === true && typeof record.mediaType === 'string' && typeof record.data === 'string') {
+      return { ok: true, mediaType: record.mediaType, data: record.data }
+    }
+    if (record.ok === false && typeof record.error === 'string') return { ok: false, error: record.error }
+    throw new Error('result must be { ok: true, mediaType, data } or { ok: false, error }')
+  }
+
+  // Model-discovery + upload + ASR RPCs: mount the `remote.looklook`
+  // namespace backed by the host LooklookRemoteService. Every method rides
+  // the authorized connection (no unauth'd HTTP routes).
   ctx.effect(() => {
     const mounting = ctx.remote.$mount({
       package: 'dsh-looklook',
-      descriptors: [{
-        id: 'looklook.listModels',
-        service: 'looklookRemote',
-        namespace: 'looklook',
-        method: 'listModels',
-        invocation: { kind: 'direct' },
-        parameters: [{
-          name: 'provider',
-          wire: 'provider',
-          source: 'json',
-          codec: { mode: 'strict', typeSymbol: 'VisionProviderProbe', schema: { parse: parseProvider } },
-        }],
-        result: { mode: 'strict', typeSymbol: 'LooklookListModelsResult', schema: { parse: parseResult } },
-      }],
+      descriptors: [
+        {
+          id: 'looklook.listModels',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'listModels',
+          invocation: { kind: 'direct' },
+          parameters: [{
+            name: 'provider',
+            wire: 'provider',
+            source: 'json',
+            codec: { mode: 'strict', typeSymbol: 'VisionProviderProbe', schema: { parse: parseProvider } },
+          }],
+          result: { mode: 'strict', typeSymbol: 'LooklookListModelsResult', schema: { parse: parseResult } },
+        },
+        {
+          id: 'looklook.upload',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'upload',
+          invocation: { kind: 'direct' },
+          parameters: [{
+            name: 'payload',
+            wire: 'payload',
+            source: 'json',
+            codec: { mode: 'strict', typeSymbol: 'LooklookUploadPayload', schema: { parse: parseUploadPayload } },
+          }],
+          result: { mode: 'strict', typeSymbol: 'LooklookUploadResult', schema: { parse: parseUploadResult } },
+        },
+        {
+          id: 'looklook.asrStatus',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'asrStatus',
+          invocation: { kind: 'direct' },
+          parameters: [],
+          result: { mode: 'strict', typeSymbol: 'LooklookAsrStatus', schema: { parse: parseAsrStatus } },
+        },
+        {
+          id: 'looklook.asrInstall',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'asrInstall',
+          invocation: { kind: 'direct' },
+          parameters: [],
+          result: { mode: 'strict', typeSymbol: 'LooklookAsrInstallResult', schema: { parse: parseAsrInstallResult } },
+        },
+        {
+          id: 'looklook.sessionModality',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'sessionModality',
+          invocation: { kind: 'direct' },
+          parameters: [{
+            name: 'sessionId',
+            wire: 'sessionId',
+            source: 'json',
+            codec: { mode: 'strict', typeSymbol: 'SessionId', schema: { parse: parseSessionId } },
+          }],
+          result: { mode: 'strict', typeSymbol: 'LooklookModalityResult', schema: { parse: parseModalityResult } },
+        },
+        {
+          id: 'looklook.readUpload',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'readUpload',
+          invocation: { kind: 'direct' },
+          parameters: [{
+            name: 'payload',
+            wire: 'payload',
+            source: 'json',
+            codec: { mode: 'strict', typeSymbol: 'LooklookReadUploadPayload', schema: { parse: parseReadUploadPayload } },
+          }],
+          result: { mode: 'strict', typeSymbol: 'LooklookReadUploadResult', schema: { parse: parseReadUploadResult } },
+        },
+      ],
     })
     return () => { void mounting.then(dispose => dispose()) }
-  }, 'dsh-looklook: model-discovery remote')
+  }, 'dsh-looklook: remote RPCs')
 
   /** Call the host discovery RPC once the namespace is mounted. */
   const listModels = async (provider: {
@@ -270,19 +415,153 @@ export function apply(ctx: ClientContext): void {
     }
   }
 
-  // ── Plugins settings → 插件配置: the looklook card (switches + 7z + vision). ──
+  /** Upload one file through the authorized RPC. */
+  const uploadFileRpc = async (
+    sessionId: string,
+    file: File,
+    onProgress?: (percent: number) => void,
+  ): Promise<{ path: string; name: string }> => {
+    const remote = ctx.get('remote.looklook') as {
+      upload?: (payload: { sessionId: string; name: string; data: string }) => Promise<
+        { ok: boolean; value?: { ok: boolean; path?: string; error?: string }; error?: { message?: string } }
+      >
+    } | undefined
+    return await uploadFile(remote, sessionId, file, onProgress)
+  }
+
+  /** Ask the host whether the session's current model accepts image input. */
+  const sessionModality = async (sessionId: string): Promise<SessionModality> => {
+    const remote = ctx.get('remote.looklook') as {
+      sessionModality?: (sessionId: string) => Promise<
+        { ok: boolean; value?: SessionModality; error?: { message?: string } }
+      >
+    } | undefined
+    if (remote?.sessionModality === undefined) return { ok: false, error: '模态查询服务未就绪' }
+    const envelope = await remote.sessionModality(sessionId)
+    if (!envelope.ok) {
+      return {
+        ok: false,
+        error: typeof envelope.error === 'string'
+          ? envelope.error
+          : envelope.error?.message ?? '模态查询失败',
+      }
+    }
+    const business = envelope.value
+    if (business?.ok === true) return { ok: true, supportsImage: business.supportsImage === true }
+    return { ok: false, error: typeof business?.error === 'string' ? business.error : '模态查询失败' }
+  }
+
+  /** Read the local ASR install state through the authorized RPC. */
+  const asrStatus = async (): Promise<{ installed: boolean; phase: string; model: string; error: string | null }> => {
+    const remote = ctx.get('remote.looklook') as {
+      asrStatus?: () => Promise<
+        { ok: boolean; value?: { installed: boolean; phase: string; model: string; error: string | null } }
+      >
+    } | undefined
+    if (remote?.asrStatus === undefined) throw new Error('ASR 状态服务未就绪')
+    const envelope = await remote.asrStatus()
+    if (!envelope.ok) throw new Error('ASR 状态查询失败')
+    const value = envelope.value
+    if (value === undefined) throw new Error('ASR 状态查询失败')
+    return { installed: value.installed === true, phase: value.phase, model: value.model, error: value.error ?? null }
+  }
+
+  /** Trigger the local ASR install through the authorized RPC. */
+  const asrInstall = async (): Promise<{ ok: true; phase: string; already: boolean } | { ok: false; error: string }> => {
+    const remote = ctx.get('remote.looklook') as {
+      asrInstall?: () => Promise<
+        { ok: boolean; value?: { ok: boolean; phase: string; already: boolean; error?: string }; error?: { message?: string } }
+      >
+    } | undefined
+    if (remote?.asrInstall === undefined) return { ok: false, error: 'ASR 安装服务未就绪' }
+    const envelope = await remote.asrInstall()
+    if (!envelope.ok) {
+      return {
+        ok: false,
+        error: typeof envelope.error === 'string'
+          ? envelope.error
+          : envelope.error?.message ?? 'ASR 安装失败',
+      }
+    }
+    const business = envelope.value
+    if (business?.ok === true) return { ok: true, phase: business.phase, already: business.already === true }
+    return { ok: false, error: typeof business?.error === 'string' ? business.error : 'ASR 安装失败' }
+  }
+
+  // Modality cache: sessionId → supportsImage. Refreshed on session change
+  // and whenever settings change (a model switch does not change the session
+  // id, so the cache must be invalidated on settings updates too).
+  const modalityCache = new Map<string, boolean>()
+  const cachedSupportsImage = (sessionId: string): boolean | undefined => modalityCache.get(sessionId)
+
+  // Probe one session's modality and remember the result. A failed probe
+  // (e.g. remote.looklook still mounting at apply time) schedules ONE retry
+  // shortly after, so cold-start probes are not permanently lost. Uses the
+  // browser global timer (the client runs in the page; dsh-client-runtime
+  // itself relies on the same global).
+  const probeModality = (sessionId: string, retriesLeft = 2): void => {
+    void sessionModality(sessionId).then(result => {
+      if (result.ok) {
+        modalityCache.set(sessionId, result.supportsImage)
+        return
+      }
+      if (retriesLeft > 0) {
+        window.setTimeout(() => probeModality(sessionId, retriesLeft - 1), 600)
+      }
+    }).catch(() => { /* keep unknown */ })
+  }
+
+  // Refresh the modality cache when the session changes.
+  ctx.effect(() => {
+    const sync = (): void => {
+      const sessionId = sessions.currentProvideInfo.getSnapshot()?.sessionId
+      if (sessionId === undefined || sessionId === '') return
+      probeModality(sessionId)
+    }
+    const dispose = sessions.currentProvideInfo.subscribe(sync)
+    sync()
+    return () => { dispose() }
+  }, 'dsh-looklook: modality cache')
+
+  // Invalidate the modality cache on every settings update (model switch,
+  // provider change, eye toggle) so the next drop re-probes.
+  ctx.effect(() => {
+    const dispose = ctx.remote.$on('settings/document-updated', () => {
+      modalityCache.clear()
+      const sessionId = sessions.currentProvideInfo.getSnapshot()?.sessionId
+      if (sessionId !== undefined && sessionId !== '') probeModality(sessionId)
+    })
+    return () => { dispose() }
+  }, 'dsh-looklook: modality invalidation')
+
+  // ── Plugins settings → 插件配置: the looklook card (switches + vision + ASR). ──
   ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
     name: 'settings.plugin.item',
     id: PLUGIN_CARD_ID,
     order: 30,
-    inject: (): LooklookCardInjected => ({ api: connection.api, t, features, useFeatures, listModels, useImageRecognition }),
+    inject: (): LooklookCardInjected => ({
+      api: connection.api,
+      t,
+      features,
+      useFeatures,
+      listModels,
+      asrStatus,
+      asrInstall,
+      useImageRecognition,
+    }),
   }, LooklookPluginCard))
 
-  // Drag-and-drop of archive/video files onto the page: intercept in the
-  // CAPTURE phase (before the built-in image-only drop handler in bubble
-  // phase), upload through the looklook route, and send the file paths as a
-  // user message. Image-only drops and mixed drops pass through untouched so
-  // the native image pipeline keeps working.
+  // Drag-and-drop of files onto the page: intercept in the CAPTURE phase.
+  // Rule per drop:
+  // - A drop that contains a NON-image file is always intercepted (archives,
+  //   videos) — the native pipeline has no place for them.
+  // - A drop that contains ONLY images is intercepted ONLY when the session
+  //   eye is ON (the per-session "看看" toggle) AND the model is NOT
+  //   image-capable (text-only: route through the file channel). When the
+  //   eye is OFF the drop passes through untouched (native behavior, for
+  //   multi-modal model sessions that want the full native pipeline); when
+  //   the cached modality says the model can see images, the drop also passes
+  //   through untouched.
   ctx.effect(() => {
     const onDragOverCapture = (event: DragEvent): void => {
       if (event.dataTransfer?.types.includes('Files') === true) {
@@ -292,11 +571,22 @@ export function apply(ctx: ClientContext): void {
     const onDropCapture = (event: DragEvent): void => {
       const files = [...(event.dataTransfer?.files ?? [])]
       if (files.length === 0) return
-      // Intercept only when EVERY dropped file is non-image (images ride the
-      // native DSH pipeline); mixed drops pass through untouched.
-      if (!files.every(file => isUploadableName(file.name))) return
       const sessionId = sessions.currentProvideInfo.getSnapshot()?.sessionId
       if (sessionId === undefined || sessionId === '') return
+
+      const hasNonImage = files.some(file => isUploadableName(file.name))
+      if (!hasNonImage) {
+        // All images: intercept only when the eye is on AND the model is
+        // text-only. Eye off → native pipeline (full native experience).
+        const eye = eyeFor(sessionId).store.getSnapshot()
+        if (eye.status === 'ready' && eye.eye === 'off') return
+        const supportsImage = cachedSupportsImage(sessionId)
+        if (supportsImage === true) return // native pipeline handles it
+        // Unknown modality is treated conservatively as text-only so images
+        // always land somewhere the model can see them; a later refresh will
+        // flip multi-modal sessions back to native.
+      }
+
       event.preventDefault()
       event.stopPropagation()
       // We intercepted the drop, so the built-in handler never runs its
@@ -308,16 +598,18 @@ export function apply(ctx: ClientContext): void {
       // when done. Nothing is sent until the user presses Enter.
       void (async () => {
         for (const file of files) {
-          const index = pending.get(sessionId).length
-          pending.add(sessionId, { name: file.name, size: file.size, uploading: true, progress: 0 })
+          const staged = { name: file.name, size: file.size, uploading: true, progress: 0 }
+          pending.add(sessionId, staged)
+          const id = pending.get(sessionId)[pending.get(sessionId).length - 1]?.id
+          if (id === undefined) continue
           try {
-            const { path } = await uploadFile(sessionId, file, (percent) => {
-              pending.update(sessionId, index, { progress: percent })
+            const { path } = await uploadFileRpc(sessionId, file, (percent) => {
+              pending.updateById(sessionId, id, { progress: percent })
             })
-            pending.update(sessionId, index, { path, uploading: false, progress: 100, error: undefined })
+            pending.updateById(sessionId, id, { path, uploading: false, progress: 100, error: undefined })
           } catch (error) {
             console.error('looklook upload failed:', file.name, error)
-            pending.update(sessionId, index, {
+            pending.updateById(sessionId, id, {
               uploading: false,
               error: error instanceof Error ? error.message : String(error),
             })
@@ -331,7 +623,7 @@ export function apply(ctx: ClientContext): void {
       document.removeEventListener('dragover', onDragOverCapture, true)
       document.removeEventListener('drop', onDropCapture, true)
     }
-  }, 'dsh-looklook: archive/video drag-and-drop')
+  }, 'dsh-looklook: file drag-and-drop')
 
   // Pending file chips (like image attachments, removable, sent with the
   // next Enter/send — the submit patch merges their notes), rendered above
@@ -360,17 +652,47 @@ export function apply(ctx: ClientContext): void {
     },
   }, VisionToggle))
 
-  // Render the ORIGINAL image in user messages.
+  // Render the ORIGINAL image in user messages (native position, plugin
+  // renderer so the original image + file-channel thumbnails show inline).
+  const chatNodeInject = (): { sessionId: string; loadUpload: import('./UserMessageNodeView.tsx').UploadImageLoader } => {
+    const sessionId = sessions.currentProvideInfo.getSnapshot()?.sessionId ?? ''
+    const loadUpload: import('./UserMessageNodeView.tsx').UploadImageLoader = async (sid, name) => {
+      const remote = ctx.get('remote.looklook') as {
+        readUpload?: (payload: { sessionId: string; name: string }) => Promise<
+          { ok: boolean; value?: { ok: boolean; mediaType: string; data: string; error?: string }; error?: { message?: string } }
+        >
+      } | undefined
+      if (remote?.readUpload === undefined) return { ok: false, error: '图片读取服务未就绪' }
+      const envelope = await remote.readUpload({ sessionId: sid, name })
+      if (!envelope.ok) {
+        return {
+          ok: false,
+          error: typeof envelope.error === 'string'
+            ? envelope.error
+            : envelope.error?.message ?? '图片读取失败',
+        }
+      }
+      const business = envelope.value
+      if (business?.ok === true && typeof business.mediaType === 'string' && typeof business.data === 'string') {
+        return { ok: true, mediaType: business.mediaType, data: business.data }
+      }
+      return { ok: false, error: typeof business?.error === 'string' ? business.error : '图片读取失败' }
+    }
+    return { sessionId, loadUpload }
+  }
+
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
     key: 'user',
     priority: -1,
     locale: NS,
+    inject: chatNodeInject,
   }, LooklookUserMessageNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
     key: 'steering',
     priority: -1,
     locale: NS,
+    inject: chatNodeInject,
   }, LooklookUserMessageNodeView))
 }

@@ -11,6 +11,15 @@
  * unexpected shapes fall back to plain text, never crashing the chat.
  */
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment';
+/** Load one uploaded file's bytes back from the session `.uploads/`. */
+export type UploadImageLoader = (sessionId: string, name: string) => Promise<{
+    ok: true;
+    mediaType: string;
+    data: string;
+} | {
+    ok: false;
+    error: string;
+}>;
 interface UserMessageNodeProps {
     node?: {
         data?: {
@@ -18,6 +27,10 @@ interface UserMessageNodeProps {
         };
     };
     loadImage?: (attachment: ImageAttachmentRef) => Promise<string>;
+    /** Session id for the file-channel thumbnail loader (injected by owner). */
+    sessionId?: string;
+    /** Load uploaded-file bytes back from `.uploads/` (injected by owner). */
+    loadUpload?: UploadImageLoader;
 }
 /**
  * Defensive user-message renderer: fixed-size thumbnails + native lightbox,

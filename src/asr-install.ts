@@ -2,28 +2,31 @@
  * dsh-looklook/asr-install — local ASR one-click install support.
  *
  * The local ASR (faster-whisper + a small wrapper script) lives OUTSIDE the
- * plugin package, under `<plugin>/../looklook-asr/` — it is machine-local
- * state, never shipped in the tarball. Install steps:
+ * plugin package, under `<dshHome>/looklook-asr/` (machine-local state, never
+ * shipped in the tarball and never wiped by a package reinstall). Install
+ * steps:
  *   1. env check: python3 + ffmpeg present;
  *   2. pip install faster-whisper (system packages allowed — PEP 668);
  *   3. download the model (medium) via HF mirror;
  *   4. write transcribe.py + a `ready` marker.
  *
- * Routes:
- *   GET  /api/looklook-asr-status   → { installed, phase, model }
- *   POST /api/looklook-asr-install  → starts the install (idempotent)
+ * The trigger/status are exposed as Remote RPCs on `remote.looklook`
+ * (asrStatus / asrInstall) — no unauth'd HTTP routes.
  */
 
 import { spawn } from 'node:child_process'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { IncomingMessage, ServerResponse } from 'node:http'
-import type { Context } from '@deepseek-ai/cordis'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 
-/** The local ASR root: <plugin root>/../looklook-asr. */
-const ASR_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'looklook-asr')
+/**
+ * The local ASR root: `$DSH_HOME/looklook-asr`, falling back to
+ * `~/.dsh/looklook-asr`. Kept OUTSIDE node_modules so `pnpm install` never
+ * wipes the downloaded model.
+ */
+const DSH_HOME = process.env.DSH_HOME ?? join(homedir(), '.dsh')
+const ASR_DIR = join(DSH_HOME, 'looklook-asr')
 /** The ready marker: written only after a successful install. */
 const READY_MARKER = join(ASR_DIR, 'ready')
 /** The transcribe wrapper script (invoked by the video tool). */
@@ -45,12 +48,6 @@ export async function localAsrReady(): Promise<boolean> {
   } catch {
     return false
   }
-}
-
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  const text = JSON.stringify(body)
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
-  res.end(text)
 }
 
 /** Run a command and collect output; resolves true on exit code 0. */
@@ -89,8 +86,12 @@ for seg in segments:
 `
 }
 
-/** Run the full install; updates installState as it goes. */
-async function performInstall(): Promise<void> {
+/** Run the full install; updates installState as it goes. Re-entrant calls
+ * (two concurrent asrInstall RPCs) are refused: the second call sees the
+ * non-'none' phase and returns already:true, so performInstall itself only
+ * ever runs one pipeline. */
+export async function performInstall(): Promise<void> {
+  if (installState.phase !== 'none' && installState.phase !== 'failed') return
   installState = { phase: 'checking' }
   try {
     // 1) env check
@@ -121,39 +122,6 @@ async function performInstall(): Promise<void> {
   }
 }
 
-/** Register the ASR install routes. */
-export function registerAsrInstallRoutes(ctx: Context): void {
-  const webServer = ctx.get('webServer') as {
-    register(route: { kind: 'exact' | 'prefix'; path: string; handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void> }): () => void
-  }
-
-  webServer.register({
-    kind: 'exact',
-    path: '/api/looklook-asr-status',
-    handler: async (_req, res) => {
-      const installed = await localAsrReady()
-      sendJson(res, 200, { installed, phase: installState.phase, model: LOCAL_ASR_MODEL, error: installState.error ?? null })
-    },
-  })
-
-  webServer.register({
-    kind: 'exact',
-    path: '/api/looklook-asr-install',
-    handler: async (req, res) => {
-      if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'method not allowed' })
-      // Idempotent: if already installed or installing, report current state.
-      if (installState.phase === 'done' || (await localAsrReady())) {
-        return sendJson(res, 200, { ok: true, already: true, phase: 'done' })
-      }
-      if (installState.phase !== 'none' && installState.phase !== 'failed') {
-        return sendJson(res, 200, { ok: true, already: true, phase: installState.phase })
-      }
-      void performInstall()
-      sendJson(res, 200, { ok: true, phase: 'checking' })
-    },
-  })
-}
-
 /** Read the ready marker (for tests). */
 export async function readReadyMarker(): Promise<string | undefined> {
   try {
@@ -161,4 +129,14 @@ export async function readReadyMarker(): Promise<string | undefined> {
   } catch {
     return undefined
   }
+}
+
+/** Read the current in-memory install phase (for the status RPC). */
+export function currentInstallPhase(): AsrInstallPhase {
+  return installState.phase
+}
+
+/** Read the last install error, if any. */
+export function currentInstallError(): string | null {
+  return installState.error ?? null
 }

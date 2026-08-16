@@ -59,9 +59,9 @@ export function FileChips(props: FileChipsInjected) {
         borderBottom: 'none',
       }}
     >
-      {list.map((file, index) => (
+      {list.map((file) => (
         <span
-          key={`${file.name}-${index}`}
+          key={file.id}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -127,7 +127,7 @@ export function FileChips(props: FileChipsInjected) {
           <button
             type="button"
             aria-label={`${t('upload.remove')}: ${file.name}`}
-            onClick={() => pending.remove(sessionId, index)}
+            onClick={() => pending.remove(sessionId, file.id)}
             style={{
               flex: 'none',
               display: 'grid',

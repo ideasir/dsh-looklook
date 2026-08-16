@@ -32,15 +32,18 @@ console.log("registry size:", registry.size, "has id:", registry.has("sha256:abc
 if (registry.size !== 1) throw new Error("registry not populated");
 if (rewritten[0].content[0].type !== "text") throw new Error("image not replaced");
 
-// 4) mount test: apply() registers the tool + system prompt + hooks
+// 4) mount test (new architecture): apply() registers tools + system prompts
+//    + configurable providers, and registers NO event handlers (no request
+//    rewriting, no image admission — the file channel bypasses the native
+//    pipeline entirely, so DSH core is never modified).
 const tools = [];
 const prompts = [];
-const handlers = [];
+const providers = [];
 const ctx = {
   settings: { register: () => ({ get: () => ({ providers: [], maxDescribeChars: 1000, sessionOverrides: {} }) }) },
   plugin: () => undefined,
   provide: () => undefined,
-  on: (ev, fn) => { handlers.push([ev, fn]); },
+  on: () => { throw new Error("unexpected event handler registration"); },
   get: (name) => {
     if (name === "webServer") return { register: () => () => {} };
     return undefined;
@@ -50,15 +53,23 @@ const ctx = {
   systemPrompt: { section: (s) => { prompts.push(s); } },
   sessions: { prepare: () => { throw new Error("must not be called"); } },
   attachments: {},
+  llm: {
+    registerConfigurableProviders: (entries) => { providers.push(...entries); return { replace: () => {} }; },
+  },
 };
 apply(ctx, { providers: [], sessionOverrides: {}, maxDescribeChars: 1000 });
 console.log("tools registered:", tools.map(t => t.name));
 console.log("system prompts:", prompts.map(p => p.name));
-console.log("events:", handlers.map(h => h[0]).join(", "));
+console.log("configurable providers:", providers.map(p => `${p.provider}->${p.settingsNs}`));
 const names = tools.map(t => t.name);
 if (names.length !== 2 || !names.includes("looklook_see") || !names.includes("process_zip")) {
   throw new Error("tools not registered: " + names.join(", "));
 }
-if (prompts.length < 2) throw new Error("system prompts missing");
-if (handlers.length < 3) throw new Error("handlers missing");
+if (prompts.length < 1) throw new Error("system prompts missing");
+if (providers.length !== 3) throw new Error(`expected 3 configurable providers, got ${providers.length}`);
+const nsSet = new Set(providers.map(p => p.settingsNs));
+if (!nsSet.has("looklook") || !nsSet.has("vision") || !nsSet.has("looklook-audio")) {
+  throw new Error("settings namespaces not exposed via configurable providers: " + [...nsSet].join(", "));
+}
+console.log("NO EVENT HANDLERS: OK (zero patch footprint)");
 console.log("ALL TOOL-ARCH TESTS PASS");

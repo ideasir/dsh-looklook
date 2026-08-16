@@ -142,7 +142,8 @@ async function describeImagesOf(
 
 // ── PPT background music (audio model, once, deck-level) ──
 
-/** Identify PPT background music via the audio model (one call, not per-slide). */
+/** Identify PPT background music via the audio model (one call, not per-slide).
+ * Tries every enabled provider in failover order (B7 fix). */
 async function identifyBackgroundMusic(
   ctx: Context,
   audioScope: AudioScope,
@@ -150,46 +151,46 @@ async function identifyBackgroundMusic(
   signal: AbortSignal,
 ): Promise<string | undefined> {
   const providers = enabledAudioProviders(audioScope)
-  const provider = providers[0]
-  if (provider === undefined) return undefined
   const resolveApiKey = await resolveApiKeyOf(ctx)
-  const apiKey = await resolveApiKey(provider.apiKeyEnv)
-  if (apiKey === undefined) return undefined
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(new Error('audio timeout')), provider.timeoutMs ?? 60_000)
-  const upstream = signal.aborted ? signal : AbortSignal.any([signal, controller.signal])
-  try {
-    const base64 = Buffer.from(audio.data).toString('base64')
-    const format = audio.mediaType.includes('mp3') ? 'mp3' : audio.mediaType.includes('m4a') ? 'm4a' : 'wav'
-    const response = await fetch(chatCompletionsUrl(provider.baseURL), {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
-      redirect: 'error',
-      signal: upstream,
-      body: JSON.stringify({
-        model: provider.model,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'text', text: `这是演示文稿中的背景音乐${audio.name !== undefined ? `（文件 ${audio.name}）` : ''}。请识别：1) 是否有音乐 2) 音乐类型/风格（如钢琴/管弦乐/电子/流行）3) 节奏氛围 4) 若知道曲名请说出。简洁回答，不需要逐页分析。` },
-            { type: 'input_audio', input_audio: { data: base64, format } },
-          ],
-        }],
-      }),
-    })
-    if (!response.ok) return undefined
-    const body = await response.json() as { choices?: Array<{ message?: Record<string, unknown> }> }
-    const message = body.choices?.[0]?.message
-    for (const field of ['content', 'reasoning']) {
-      const value = message?.[field]
-      if (typeof value === 'string' && value.trim() !== '') return value.trim()
+  const base64 = Buffer.from(audio.data).toString('base64')
+  const format = audio.mediaType.includes('mp3') ? 'mp3' : audio.mediaType.includes('m4a') ? 'm4a' : 'wav'
+  for (const provider of providers) {
+    const apiKey = await resolveApiKey(provider.apiKeyEnv)
+    if (apiKey === undefined) continue
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(new Error('audio timeout')), provider.timeoutMs ?? 60_000)
+    const upstream = signal.aborted ? signal : AbortSignal.any([signal, controller.signal])
+    try {
+      const response = await fetch(chatCompletionsUrl(provider.baseURL), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+        redirect: 'error',
+        signal: upstream,
+        body: JSON.stringify({
+          model: provider.model,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: `这是演示文稿中的背景音乐${audio.name !== undefined ? `（文件 ${audio.name}）` : ''}。请识别：1) 是否有音乐 2) 音乐类型/风格（如钢琴/管弦乐/电子/流行）3) 节奏氛围 4) 若知道曲名请说出。简洁回答，不需要逐页分析。` },
+              { type: 'input_audio', input_audio: { data: base64, format } },
+            ],
+          }],
+        }),
+      })
+      if (!response.ok) continue
+      const body = await response.json() as { choices?: Array<{ message?: Record<string, unknown> }> }
+      const message = body.choices?.[0]?.message
+      for (const field of ['content', 'reasoning']) {
+        const value = message?.[field]
+        if (typeof value === 'string' && value.trim() !== '') return value.trim()
+      }
+    } catch {
+      // try the next provider
+    } finally {
+      clearTimeout(timeout)
     }
-    return undefined
-  } catch {
-    return undefined
-  } finally {
-    clearTimeout(timeout)
   }
+  return undefined
 }
 
 // ── Office (docx/xlsx/pptx) ──

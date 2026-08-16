@@ -37,6 +37,7 @@ export interface ProviderListEditorProps {
     listModels?: (provider: {
         baseURL: string;
         apiKeyEnv: string;
+        apiKey?: string;
     }) => Promise<{
         ok: true;
         models: string[];

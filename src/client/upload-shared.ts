@@ -1,24 +1,35 @@
 /**
- * Shared upload logic for dsh-looklook: upload any non-image file through the
- * plugin's `/api/looklook-upload` route (saved into the session workspace
- * `.uploads/`) and return its path. The caller stages the note into the
- * input draft — nothing is sent until the user presses Enter.
+ * Shared upload logic for dsh-looklook: upload any dropped file (image,
+ * archive, video) through the plugin's `remote.looklook.upload` RPC (saved
+ * into the session workspace `.uploads/`) and return its path. The caller
+ * stages the note into the input draft — nothing is sent until the user
+ * presses Enter.
  *
- * The channel accepts EVERY extension (installing the plugin unlocks all
- * uploads); only browser-native image types are left to the DSH image
- * pipeline. This file mirrors the host route's no-whitelist policy.
+ * The channel accepts EVERY extension; the client asks the host about the
+ * session model's modality first and routes images to the native pipeline
+ * when the model can already see them (multi-modal models stay native).
  */
 
-/** Image extensions that ride the native DSH pipeline (never intercepted). */
-const NATIVE_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.avif']
+/** Image extensions that ride the native DSH pipeline when the model is
+ * multi-modal (they are intercepted only for text-only sessions). */
+export const NATIVE_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.avif']
+
+/** Whether a file name is an image that can ride the native pipeline. */
+export function isNativeImageName(name: string): boolean {
+  const ext = extensionOf(name)
+  return NATIVE_IMAGE_EXTENSIONS.includes(ext)
+}
 
 /** Whether a file name should be intercepted by the looklook upload channel
- * (i.e. it is NOT a native image). */
+ * (i.e. it is NOT a native image; images are routed by modality at drop time). */
 export function isUploadableName(name: string): boolean {
+  return !isNativeImageName(name)
+}
+
+function extensionOf(name: string): string {
   const lower = name.toLowerCase()
   const dot = lower.lastIndexOf('.')
-  const ext = dot >= 0 ? lower.slice(dot) : ''
-  return !NATIVE_IMAGE_EXTENSIONS.includes(ext)
+  return dot >= 0 ? lower.slice(dot) : ''
 }
 
 /**
@@ -42,43 +53,38 @@ export function fileToBase64(file: File): Promise<string> {
   })
 }
 
-/** Upload one file via XMLHttpRequest (reports upload progress). */
+/** The remote surface the upload RPC lives on. */
+export interface LooklookUploadRemote {
+  upload?(payload: { sessionId: string; name: string; data: string }): Promise<
+    { ok: boolean; value?: { ok: boolean; path?: string; error?: string }; error?: { message?: string } }
+  >
+}
+
+/** Upload one file via the authorized RPC. */
 export async function uploadFile(
+  remote: LooklookUploadRemote | undefined,
   sessionId: string,
   file: File,
   onProgress?: (percent: number) => void,
 ): Promise<{ path: string; name: string }> {
+  if (remote?.upload === undefined) throw new Error('上传服务未就绪（插件宿主未加载）')
   const data = await fileToBase64(file)
-  return new Promise((resolveBody, rejectBody) => {
-    const xhr = new XMLHttpRequest()
-    xhr.open('POST', '/api/looklook-upload')
-    xhr.setRequestHeader('content-type', 'application/json')
-    // Upload progress: the request body is the base64 payload.
-    if (onProgress !== undefined) {
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable && event.total > 0) {
-          onProgress(Math.round((event.loaded / event.total) * 100))
-        }
-      }
-    }
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const body = JSON.parse(xhr.responseText) as { ok?: boolean; path?: string; error?: string }
-          if (body.ok !== true || body.path === undefined) {
-            rejectBody(new Error(body.error ?? `上传失败（HTTP ${xhr.status}）`))
-            return
-          }
-          resolveBody({ path: body.path, name: file.name })
-        } catch {
-          rejectBody(new Error('上传响应解析失败'))
-        }
-      } else {
-        rejectBody(new Error(`上传失败（HTTP ${xhr.status}）`))
-      }
-    }
-    xhr.onerror = () => rejectBody(new Error('上传失败：网络错误'))
-    xhr.onabort = () => rejectBody(new Error('上传已取消'))
-    xhr.send(JSON.stringify({ sessionId, name: file.name, data }))
-  })
+  onProgress?.(30) // read done; RPC send is not progress-reportable — show movement
+  const envelope = await remote.upload({ sessionId, name: file.name, data })
+  onProgress?.(100)
+  if (!envelope.ok) {
+    throw new Error(
+      typeof envelope.error === 'string'
+        ? envelope.error
+        : envelope.error?.message ?? '上传失败',
+    )
+  }
+  const business = envelope.value
+  if (business?.ok === true && business.path !== undefined) {
+    return { path: business.path, name: file.name }
+  }
+  throw new Error(typeof business?.error === 'string' ? business.error : '上传失败')
 }
+
+/** Session modality probe result. */
+export type SessionModality = { ok: true; supportsImage: boolean } | { ok: false; error: string }

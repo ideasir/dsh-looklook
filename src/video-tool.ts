@@ -23,7 +23,8 @@
  */
 
 import { spawn } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
@@ -35,9 +36,17 @@ import { chatCompletionsUrl } from './vision-client.ts'
 /** The vendored worker's directory (scripts/video-worker next to this file). */
 const WORKER_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'video-worker')
 
-/** The local ASR install root: sibling of the plugin package (same formula as
- * asr-install.ts: lib/ → plugin root → node_modules/…). */
-const ASR_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'looklook-asr')
+/**
+ * Shared scratch directory for frames/WAVs: the OS temp dir, NOT inside the
+ * plugin package or node_modules (a reinstall would wipe it mid-use, and
+ * running inside node_modules is a packaging smell). Keyed by this package so
+ * concurrent DSH profiles do not collide.
+ */
+const TMP_DIR = join(tmpdir(), 'dsh-looklook')
+
+/** The local ASR install root: $DSH_HOME/looklook-asr (same formula as
+ * asr-install.ts) — machine-local state outside node_modules. */
+const ASR_DIR = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'looklook-asr')
 /** The local ASR install marker file (set by the one-click installer). */
 const LOCAL_ASR_MARKER = join(ASR_DIR, 'ready')
 /** The local ASR transcribe script (written by the installer). */
@@ -94,8 +103,11 @@ function runWorker(
   timeoutMs = 600_000,
 ): Promise<WorkerOutput> {
   return new Promise((resolveBody, rejectBody) => {
-    const outdir = join(WORKER_DIR, '..', '..', 'tmp-worker-out')
-    const args = ['worker.py', source, outdir, JSON.stringify(opts)]
+    // Per-call scratch subdir so concurrent videos never collide on the
+    // worker's fixed frame/file names (P1: cross-session frame theft).
+    const callDir = join(TMP_DIR, `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`)
+    void mkdir(callDir, { recursive: true }).catch(() => {})
+    const args = ['worker.py', source, callDir, JSON.stringify(opts)]
     const child = spawn('python3', args, {
       cwd: WORKER_DIR,
       env: {
@@ -107,9 +119,14 @@ function runWorker(
     let stdout = ''
     let stderr = ''
     let settled = false
+    // Best-effort scratch cleanup on settle (success, failure, timeout, abort).
+    const cleanupScratch = (): void => {
+      void import('node:fs/promises').then(fs => fs.rm(callDir, { recursive: true, force: true })).catch(() => {})
+    }
     const timer = setTimeout(() => {
       if (settled) return
       settled = true
+      cleanupScratch()
       child.kill('SIGKILL')
       rejectBody(new Error(`视频分析超时（${Math.round(timeoutMs / 1000)}s）`))
     }, timeoutMs)
@@ -117,6 +134,7 @@ function runWorker(
       if (settled) return
       settled = true
       clearTimeout(timer)
+      cleanupScratch()
       child.kill('SIGKILL')
       rejectBody(new Error('视频分析已取消'))
     }
@@ -157,8 +175,10 @@ function runWorker(
  * @returns the temp WAV path (caller owns cleanup).
  */
 async function sampleAudio(videoPath: string, signal: AbortSignal, start = 0, end?: number): Promise<string> {
-  const tmpDir = join(WORKER_DIR, '..', '..', 'tmp-worker-out')
-  const wav = join(tmpDir, `audio_${start}.wav`)
+  const tmpDir = TMP_DIR
+  await mkdir(tmpDir, { recursive: true })
+  // Unique file name per slice so concurrent videos never collide.
+  const wav = join(tmpDir, `audio_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}.wav`)
   const args = ['-y', '-i', videoPath, '-vn', '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1']
   if (start > 0) args.splice(1, 0, '-ss', String(start))
   if (end !== undefined) args.push('-t', String(end - start))
@@ -167,39 +187,57 @@ async function sampleAudio(videoPath: string, signal: AbortSignal, start = 0, en
   return wav
 }
 
+/** Delete one temp WAV (best-effort; never throws). */
+async function cleanupWav(wavPath: string): Promise<void> {
+  try {
+    await import('node:fs/promises').then(fs => fs.rm(wavPath, { force: true }))
+  } catch {
+    /* best-effort cleanup */
+  }
+}
+
 /**
- * Compute audio-understanding slices from ASR transcript segments.
- * Segments carry start/end; we merge them into at most `maxSlices` blocks
- * separated by gaps, so a talking video is understood per natural pause
- * while a music-only video stays one slice.
+ * Compute audio-understanding slices. With ASR segments, slices follow the
+ * transcript's natural pauses (gap ≥ 2s starts a new slice, at most
+ * `maxSlices`). Without segments, slices are fixed 60s blocks so a long
+ * video never loads a whole multi-hour WAV into memory (C4 fix): a video of
+ * any length becomes at most `maxSlices` capped blocks.
  */
 function audioSlicesOf(
   segments: ReadonlyArray<{ start: number; end: number; text: string }> | null | undefined,
   duration: number,
   maxSlices = 4,
 ): Array<{ start: number; end: number | undefined }> {
-  if (segments === null || segments === undefined || segments.length === 0 || duration <= 0) {
-    return [{ start: 0, end: duration > 0 ? duration : undefined }]
-  }
-  const sorted = [...segments].sort((a, b) => a.start - b.start)
-  const first = sorted[0]
-  if (first === undefined) return [{ start: 0, end: duration }]
-  const slices: Array<{ start: number; end: number | undefined }> = []
-  let start = first.start
-  let end = first.end
-  for (const seg of sorted.slice(1)) {
-    const gap = seg.start - end
-    // A gap of 2s+ is a natural pause → cut a new slice.
-    if (gap >= 2 && slices.length + 1 < maxSlices) {
-      slices.push({ start, end })
-      start = seg.start
-      end = seg.end
-    } else {
-      end = Math.max(end, seg.end)
+  if (duration <= 0) return [{ start: 0, end: undefined }]
+  if (segments !== null && segments !== undefined && segments.length > 0) {
+    const sorted = [...segments].sort((a, b) => a.start - b.start)
+    const first = sorted[0]
+    if (first === undefined) return [{ start: 0, end: duration }]
+    const slices: Array<{ start: number; end: number | undefined }> = []
+    let start = first.start
+    let end = first.end
+    for (const seg of sorted.slice(1)) {
+      const gap = seg.start - end
+      // A gap of 2s+ is a natural pause → cut a new slice.
+      if (gap >= 2 && slices.length + 1 < maxSlices) {
+        slices.push({ start, end })
+        start = seg.start
+        end = seg.end
+      } else {
+        end = Math.max(end, seg.end)
+      }
     }
+    slices.push({ start, end })
+    return slices
   }
-  slices.push({ start, end })
-  return slices
+  // No transcript: fixed 60s blocks, capped.
+  const block = 60
+  const count = Math.min(Math.max(1, Math.ceil(duration / block)), maxSlices)
+  const step = duration / count
+  return Array.from({ length: count }, (_, i) => ({
+    start: Math.round(i * step * 10) / 10,
+    end: i === count - 1 ? duration : Math.round((i + 1) * step * 10) / 10,
+  }))
 }
 
 /** HIGH route: chat/completions + input_audio (transcript + tone/music/pace). */
@@ -347,53 +385,58 @@ async function understandAudio(
 ): Promise<AudioUnderstanding[]> {
   const results: AudioUnderstanding[] = []
   for (const slice of slices) {
-    const wavPath = await sampleAudio(audioPath, signal, slice.start, slice.end)
-    let resolved = false
-    for (const provider of providers) {
-      const key = `${provider.baseURL}|${provider.model}`
-      const cached = audioCapabilityCache.get(key) ?? 'unknown'
-      const apiKey = await resolveApiKey(provider.apiKeyEnv)
-      if (apiKey === undefined) continue
-      if (cached !== 'low') {
-        const high = await audioHigh(provider, apiKey, wavPath, question, signal)
-        if (high.ok) {
-          audioCapabilityCache.set(key, 'high')
-          results.push({ ok: true, high: true, start: slice.start, end: slice.end, text: high.text })
-          resolved = true
-          break
+    let wavPath: string | undefined
+    try {
+      wavPath = await sampleAudio(audioPath, signal, slice.start, slice.end)
+      let resolved = false
+      for (const provider of providers) {
+        const key = `${provider.baseURL}|${provider.model}`
+        const cached = audioCapabilityCache.get(key) ?? 'unknown'
+        const apiKey = await resolveApiKey(provider.apiKeyEnv)
+        if (apiKey === undefined) continue
+        if (cached !== 'low') {
+          const high = await audioHigh(provider, apiKey, wavPath, question, signal)
+          if (high.ok) {
+            audioCapabilityCache.set(key, 'high')
+            results.push({ ok: true, high: true, start: slice.start, end: slice.end, text: high.text })
+            resolved = true
+            break
+          }
+          if (high.reject) {
+            audioCapabilityCache.set(key, 'low')
+          } else {
+            results.push({ ok: false, high: cached === 'unknown', start: slice.start, end: slice.end, error: high.error })
+            resolved = true
+            break
+          }
         }
-        if (high.reject) {
+        const low = await audioLow(provider, apiKey, wavPath, signal)
+        if (low.ok) {
           audioCapabilityCache.set(key, 'low')
-        } else {
-          results.push({ ok: false, high: cached === 'unknown', start: slice.start, end: slice.end, error: high.error })
+          results.push({ ok: true, high: false, start: slice.start, end: slice.end, text: low.text })
+          resolved = true
+          break
+        }
+        if (!low.reject) {
+          results.push({ ok: false, high: false, start: slice.start, end: slice.end, error: low.error })
           resolved = true
           break
         }
       }
-      const low = await audioLow(provider, apiKey, wavPath, signal)
-      if (low.ok) {
-        audioCapabilityCache.set(key, 'low')
-        results.push({ ok: true, high: false, start: slice.start, end: slice.end, text: low.text })
-        resolved = true
-        break
+      if (resolved) continue
+      // No usable API provider — try the local one-click ASR install.
+      const localOk = await import('node:fs').then(fs => fs.promises.access(LOCAL_ASR_MARKER).then(() => true).catch(() => false))
+      if (localOk) {
+        const local = await audioLocal(wavPath, signal)
+        if (local.ok) {
+          results.push({ ok: true, high: false, start: slice.start, end: slice.end, text: local.text })
+          continue
+        }
       }
-      if (!low.reject) {
-        results.push({ ok: false, high: false, start: slice.start, end: slice.end, error: low.error })
-        resolved = true
-        break
-      }
+      results.push({ ok: false, start: slice.start, end: slice.end, error: '未配置音频模型或本地 ASR' })
+    } finally {
+      if (wavPath !== undefined) await cleanupWav(wavPath)
     }
-    if (resolved) continue
-    // No usable API provider — try the local one-click ASR install.
-    const localOk = await import('node:fs').then(fs => fs.promises.access(LOCAL_ASR_MARKER).then(() => true).catch(() => false))
-    if (localOk) {
-      const local = await audioLocal(wavPath, signal)
-      if (local.ok) {
-        results.push({ ok: true, high: false, start: slice.start, end: slice.end, text: local.text })
-        continue
-      }
-    }
-    results.push({ ok: false, start: slice.start, end: slice.end, error: '未配置音频模型或本地 ASR' })
   }
   return results
 }
@@ -448,10 +491,10 @@ async function describeFrame(
   for (const provider of providers) {
     const apiKey = await resolveApiKey(provider.apiKeyEnv)
     if (apiKey === undefined) continue
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(new Error('vision timeout')), provider.timeoutMs ?? 30_000)
     try {
       const data = await readFile(framePath)
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(new Error('vision timeout')), provider.timeoutMs ?? 30_000)
       const upstream = signal.aborted ? signal : AbortSignal.any([signal, controller.signal])
       const response = await fetch(chatCompletionsUrl(provider.baseURL), {
         method: 'POST',
@@ -470,12 +513,14 @@ async function describeFrame(
           max_tokens: 400,
         }),
       })
-      clearTimeout(timeout)
       if (!response.ok) continue
       const text = extractAssistantText(await response.json())
       if (text !== '') return `第${Math.round(at)}秒：${text}`
     } catch {
       // try the next provider
+    } finally {
+      // Always release the timeout, including the abort/network error path (M1).
+      clearTimeout(timeout)
     }
   }
   return `第${Math.round(at)}秒：（画面描述失败，帧路径 ${framePath}）`
@@ -611,12 +656,16 @@ export async function watchVideo(
       return resolvedCred?.value
     }
 
-    // Audio understanding: slice by ASR pauses, probe capability per slice.
+    // Audio understanding: slice by ASR pauses (or fixed 60s blocks when the
+    // transcript has no segments), probe capability per slice. Runs whenever
+    // there is an audio path — WITH subtitles too, because L3 (tone / music /
+    // pace) is exactly what subtitles cannot provide (H3 fix).
     const audioPath = workerOut.audio_path ?? workerOut.video_path
     const duration = typeof workerOut.meta?.duration === 'number' ? workerOut.meta.duration : 0
     let audio: AudioUnderstanding[] = []
-    if (audioPath !== undefined && audioPath !== '' && workerOut.transcript === null) {
-      const slices = audioSlicesOf(null, duration)
+    if (audioPath !== undefined && audioPath !== '') {
+      const segments = workerOut.transcript?.segments ?? null
+      const slices = audioSlicesOf(segments, duration)
       audio = await understandAudio(
         enabledAudioProviders(audioScope),
         resolveApiKey,

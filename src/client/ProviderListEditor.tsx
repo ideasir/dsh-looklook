@@ -51,7 +51,7 @@ export interface ProviderListEditorProps {
   /** Intro copy under the title. */
   intro: string
   /** Optional /models probe; absent = the fetch button is hidden. */
-  listModels?: (provider: { baseURL: string; apiKeyEnv: string }) => Promise<
+  listModels?: (provider: { baseURL: string; apiKeyEnv: string; apiKey?: string }) => Promise<
     { ok: true; models: string[] } | { ok: false; error: string }
   >
 }
@@ -209,6 +209,9 @@ export function ProviderListEditor(props: ProviderListEditorProps) {
       const result = await listModels({
         baseURL: draft.baseURL,
         apiKeyEnv: credentialRefFor(draft.id),
+        // Pass the just-typed key so a brand-new provider (whose credential
+        // is not yet stored) can be probed before saving (P1 fix).
+        ...draft.apiKey !== undefined && draft.apiKey !== '' ? { apiKey: draft.apiKey } : {},
       })
       if (result.ok) {
         setFetchedModels(current => ({ ...current, [draft.id]: result.models }))

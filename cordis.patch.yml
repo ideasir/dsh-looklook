@@ -1,14 +1,17 @@
-# dsh-looklook — vision-assist plugin layer.
+# dsh-looklook — look-at-anything plugin layer.
 #
 # Installed as a bundle: `dsh plugin --profile <name> add dsh-looklook`.
-# The host row answers `prompt/image-admission` (admits images regardless of
-# the selected model's declared modalities) and rewrites model requests at the
-# `agent/request-messages` waterfall (translates image blocks into text for
-# text-only conversation models, or strips them to a placeholder while the
-# per-session eye toggle is off).
+#
+# Zero-patch architecture: the plugin exposes its settings namespaces through
+# `llm.registerConfigurableProviders()` (api-proxy serves those automatically),
+# routes dropped files through the authorized `remote.looklook.upload` RPC into
+# the session `.uploads/`, and NEVER touches the native attachment pipeline or
+# any `@deepseek-ai/*` source file. No prompt admission, no request rewriting,
+# no harness patches — nothing here overrides DSH behavior beyond this row.
 #
 # Configuration defaults live in the row config below; the user layer in the
-# `vision` settings namespace overrides them at runtime (hot reload).
+# `looklook` / `vision` / `looklook-audio` settings namespaces overrides them
+# at runtime (hot reload).
 - insert:
     - id: looklook
       name: dsh-looklook

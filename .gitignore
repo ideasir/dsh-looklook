@@ -4,3 +4,7 @@ node_modules/
 # 开发日记：内部资料，绝不推送/发布
 DEVLOG.md
 *.tgz
+# 运行时临时产物（绝不提交）
+tmp-worker-out/
+.uploads/
+looklook-asr/

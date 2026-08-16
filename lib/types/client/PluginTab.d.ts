@@ -23,6 +23,10 @@ export interface LooklookCardInjected {
     useFeatures: () => FeatureState;
     /** Probe one provider's `/models` endpoint through the host RPC. */
     listModels: ModelSettingsInjected['listModels'];
+    /** Read the local ASR install state through the authorized RPC. */
+    asrStatus: ModelSettingsInjected['asrStatus'];
+    /** Trigger the local ASR install through the authorized RPC. */
+    asrInstall: ModelSettingsInjected['asrInstall'];
     /** Reactive snapshot of the image recognition master switch. */
     useImageRecognition: () => boolean;
 }

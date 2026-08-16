@@ -35,6 +35,59 @@ interface FileMeta {
   size: number
 }
 
+/** Load one uploaded file's bytes back from the session `.uploads/`. */
+export type UploadImageLoader = (sessionId: string, name: string) => Promise<
+  { ok: true; mediaType: string; data: string } | { ok: false; error: string }
+>
+
+const IMAGE_EXT_RE = /\.(png|jpe?g|webp|gif|bmp|avif)$/i
+
+/** Whether a file marker's name looks like an image (thumbnail-able). */
+function isImageFileMeta(file: FileMeta): boolean {
+  return IMAGE_EXT_RE.test(file.name)
+}
+
+/** One image file card: local thumbnail from the uploaded bytes + lightbox. */
+function UploadImageCard({ sessionId, file, load }: {
+  sessionId: string
+  file: FileMeta
+  load: UploadImageLoader
+}) {
+  const [src, setSrc] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    let live = true
+    setFailed(false)
+    load(sessionId, file.name).then(result => {
+      if (!live) return
+      if (result.ok) setSrc(`data:${result.mediaType};base64,${result.data}`)
+      else setFailed(true)
+    }).catch(() => { if (live) setFailed(true) })
+    return () => { live = false }
+  }, [sessionId, file.name, load])
+  if (failed) {
+    return <FileCard file={file} />
+  }
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => { if (src !== null) setOpen(true) }}
+        aria-label="查看原图"
+        style={{ padding: 0, border: 0, background: 'none', cursor: src !== null ? 'pointer' : 'default', lineHeight: 0 }}
+      >
+        {src === null
+          ? <div style={{ width: 120, height: 90, borderRadius: 8, background: 'rgba(128,128,128,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontSize: 12 }}>加载中…</div>
+          : <img src={src} alt={file.name} style={{ maxWidth: 220, maxHeight: 220, borderRadius: 8, objectFit: 'cover', display: 'block' }} />}
+      </button>
+      {open && src !== null && (
+        <ImageLightbox src={src} alt={file.name} labels={LIGHTBOX_LABELS} onClose={() => setOpen(false)} />
+      )}
+    </>
+  )
+}
+
 /** A rendered attachment card: type icon + name + size. */
 function FileCard({ file }: { file: FileMeta }) {
   return (
@@ -192,6 +245,10 @@ interface ContentBlockLike {
 interface UserMessageNodeProps {
   node?: { data?: { content?: unknown } }
   loadImage?: (attachment: ImageAttachmentRef) => Promise<string>
+  /** Session id for the file-channel thumbnail loader (injected by owner). */
+  sessionId?: string
+  /** Load uploaded-file bytes back from `.uploads/` (injected by owner). */
+  loadUpload?: UploadImageLoader
 }
 
 /**
@@ -248,17 +305,34 @@ export function LooklookUserMessageNodeView(props: UserMessageNodeProps) {
     })
   const trimmed = cleaned.trim()
   if (attachments.length === 0 && files.length === 0 && trimmed.length === 0) return null
+  // Dedupe attachments by id: the same image may appear both as a native
+  // content block and inside a marker text (P2: double thumbnail + dup key).
+  const seenAttachmentIds = new Set<string>()
+  const uniqueAttachments = attachments.filter(item => {
+    if (seenAttachmentIds.has(item.attachmentId)) return false
+    seenAttachmentIds.add(item.attachmentId)
+    return true
+  })
   const load = props.loadImage ?? (() => Promise.reject(new Error('image loader unavailable')))
+  const loadUpload = props.loadUpload
+  const sessionId = props.sessionId ?? ''
+  const imageFiles = loadUpload !== undefined
+    ? files.filter(file => isImageFileMeta(file))
+    : []
+  const otherFiles = files.filter(file => !imageFiles.includes(file))
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, margin: '8px 0' }}>
       {files.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
-          {files.map((file, index) => <FileCard key={`${file.path}-${index}`} file={file} />)}
+          {imageFiles.map((file, index) => (
+            <UploadImageCard key={`${file.path}-${index}`} sessionId={sessionId} file={file} load={loadUpload as UploadImageLoader} />
+          ))}
+          {otherFiles.map((file, index) => <FileCard key={`${file.path}-${index}`} file={file} />)}
         </div>
       )}
-      {attachments.length > 0 && (
+      {uniqueAttachments.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
-          {attachments.map((item) => <LooklookThumb key={item.attachmentId} attachment={item} load={load} />)}
+          {uniqueAttachments.map((item) => <LooklookThumb key={item.attachmentId} attachment={item} load={load} />)}
         </div>
       )}
       {trimmed.length > 0 && (

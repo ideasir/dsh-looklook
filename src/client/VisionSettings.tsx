@@ -6,11 +6,11 @@
  *   probes the model's capability at use time (no user label needed).
  *   Plus a one-click local ASR install (faster-whisper medium).
  *
- * Both lists reuse {@link ProviderListEditor}; the local ASR install is a
- * small status/trigger card wired to the host routes.
+ * Both lists reuse {@link ProviderListEditor}; the local ASR install card is
+ * wired to the authorized remote.looklook RPCs (asrStatus / asrInstall).
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -23,13 +23,17 @@ export interface ModelSettingsInjected {
   /** Bound translate for the `looklook` namespace. */
   t: TranslateNS<'looklook'>
   /** Probe one provider's `/models` endpoint through the host RPC. */
-  listModels: (provider: { baseURL: string; apiKeyEnv: string }) => Promise<
+  listModels: (provider: { baseURL: string; apiKeyEnv: string; apiKey?: string }) => Promise<
     { ok: true; models: string[] } | { ok: false; error: string }
   >
+  /** Read the local ASR install state through the authorized RPC. */
+  asrStatus: () => Promise<AsrStatus>
+  /** Trigger the local ASR install through the authorized RPC. */
+  asrInstall: () => Promise<{ ok: true; phase: string; already: boolean } | { ok: false; error: string }>
 }
 
-/** Local ASR install status (from the host routes). */
-interface AsrStatus {
+/** Local ASR install status (from the host RPC). */
+export interface AsrStatus {
   installed: boolean
   phase: string
   error?: string | null
@@ -59,16 +63,19 @@ const css = {
   },
 } as const
 
-/** One-click local ASR install card. */
-function LocalAsrCard({ api, t }: { api: IApiClient; t: TranslateNS<'looklook'> }) {
+/** One-click local ASR install card (all calls ride the authorized RPC). */
+function LocalAsrCard({ asrStatus, asrInstall, t }: {
+  asrStatus: ModelSettingsInjected['asrStatus']
+  asrInstall: ModelSettingsInjected['asrInstall']
+  t: TranslateNS<'looklook'>
+}) {
   const [status, setStatus] = useState<AsrStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = async (): Promise<void> => {
     try {
-      const response = await fetch('/api/looklook-asr-status')
-      const body = await response.json() as AsrStatus
+      const body = await asrStatus()
       setStatus(body)
       setError(null)
     } catch (err) {
@@ -76,22 +83,43 @@ function LocalAsrCard({ api, t }: { api: IApiClient; t: TranslateNS<'looklook'> 
     }
   }
 
-  useEffect(() => { void refresh() }, [api])
+  useEffect(() => { void refresh() }, [asrStatus])
+
+  // Holds the active poll interval so the unmount effect can stop it.
+  const pollTimerRef = useRef<number | null>(null)
 
   const install = async (): Promise<void> => {
     setBusy(true)
     setError(null)
     try {
-      const response = await fetch('/api/looklook-asr-install', { method: 'POST' })
-      const body = await response.json() as { ok?: boolean; error?: string }
-      if (body.ok !== true) throw new Error(body.error ?? '启动安装失败')
-      // Poll until done/failed.
+      const body = await asrInstall()
+      if (!body.ok) throw new Error(body.error ?? '启动安装失败')
+      // Poll until done/failed. Read the LATEST status from each poll's own
+      // response (not the render-closure status — the closure value is stale
+      // and would never satisfy the terminal check, H4 fix). The interval is
+      // cleared on completion, on error, and when the component unmounts.
       await new Promise<void>((resolveBody) => {
-        const timer = setInterval(async () => {
-          await refresh()
-          if (status !== null && (status.phase === 'done' || status.phase === 'failed')) {
-            clearInterval(timer)
-            resolveBody()
+        let settled = false
+        const finish = (): void => {
+          if (settled) return
+          settled = true
+          if (pollTimerRef.current !== null) {
+            window.clearInterval(pollTimerRef.current)
+            pollTimerRef.current = null
+          }
+          resolveBody()
+        }
+        pollTimerRef.current = window.setInterval(async () => {
+          let current: AsrStatus | null = null
+          try {
+            current = await asrStatus()
+            setStatus(current)
+            setError(null)
+          } catch (err) {
+            setError(err instanceof Error ? err.message : String(err))
+          }
+          if (current !== null && (current.phase === 'done' || current.phase === 'failed')) {
+            finish()
           }
         }, 1500)
       })
@@ -101,6 +129,15 @@ function LocalAsrCard({ api, t }: { api: IApiClient; t: TranslateNS<'looklook'> 
       setBusy(false)
     }
   }
+
+  // Stop the poll interval when the card unmounts (collapsed settings card,
+  // page leave) so it never keeps firing RPCs against a dead component.
+  useEffect(() => () => {
+    if (pollTimerRef.current !== null) {
+      window.clearInterval(pollTimerRef.current)
+      pollTimerRef.current = null
+    }
+  }, [])
 
   const phaseLabel = (phase: string): string => {
     switch (phase) {
@@ -143,7 +180,7 @@ function LocalAsrCard({ api, t }: { api: IApiClient; t: TranslateNS<'looklook'> 
 
 /** The model-configuration body (visual + audio sections). */
 export function ModelSettingsSection(props: ModelSettingsInjected) {
-  const { api, t, listModels } = props
+  const { api, t, listModels, asrStatus, asrInstall } = props
   return (
     <div style={css.stack}>
       <ProviderListEditor
@@ -162,7 +199,7 @@ export function ModelSettingsSection(props: ModelSettingsInjected) {
         title={t('settings.audio.title')}
         intro={t('settings.audio.intro')}
       />
-      <LocalAsrCard api={api} t={t} />
+      <LocalAsrCard asrStatus={asrStatus} asrInstall={asrInstall} t={t} />
     </div>
   )
 }

@@ -2,10 +2,10 @@
  * looklook_see — the unified "look at anything" tool.
  *
  * One tool name for every content type; the tool itself decides how to look:
- * - image reference (from a user message) or local image file → vision model;
+ * - local image file → vision model;
  * - local video file or video URL → frames + audio understanding;
- * - ZIP archive → list its contents.
- * PDF / spreadsheets / documents will join as more branches.
+ * - ZIP archive → list its contents;
+ * - document files (.docx/.xlsx/.pptx/.pdf/.psd) → extracted digest.
  *
  * The main model only needs to remember ONE tool for understanding content:
  * looklook_see(source, question). (process_zip stays separate for the
@@ -13,94 +13,65 @@
  * content.)
  */
 
-import { readFile } from 'node:fs/promises'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Context } from '@deepseek-ai/cordis'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { AudioScope, LooklookScope, VisionScope } from './settings.ts'
 import { looklookFeatures } from './settings.ts'
-import { describeImageByRef } from './describe-tool.ts'
+import { describeImageFile } from './describe-tool.ts'
 import { watchVideo } from './video-tool.ts'
 import { readDocumentFile, isDocumentPath } from './doc-tool.ts'
-import { ZipStore, DEFAULT_MAX_ZIP_SIZE, DEFAULT_EXTRACT_DIR } from './zip-store.ts'
+import { ZipStore, DEFAULT_MAX_ZIP_SIZE } from './zip-store.ts'
 import { buildEntryTree } from './zip-tool.ts'
-import { describeImages } from './vision-client.ts'
 
-/** Image file extensions the tool can read directly from disk. */
-const IMAGE_FILE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.avif']
+/** Image file extensions the tool can read directly from disk (must be
+ * media types the vision endpoints accept: png/jpeg/webp/gif). */
+const IMAGE_FILE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp']
 
 /** Video file extensions (local video files). */
 const VIDEO_FILE_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v']
 
-/** MIME map for local image files fed to the vision model. */
-function mediaTypeOf(ext: string): string {
-  switch (ext) {
-    case '.png': return 'image/png'
-    case '.gif': return 'image/gif'
-    case '.webp': return 'image/webp'
-    case '.bmp': return 'image/bmp'
-    case '.avif': return 'image/avif'
-    default: return 'image/jpeg'
-  }
+/** Remote-image URL detection: an http(s) URL whose path ends in an image ext. */
+function isImageUrl(source: string): boolean {
+  const path = source.split(/[?#]/)[0] ?? source
+  const dot = path.toLowerCase().lastIndexOf('.')
+  const ext = dot >= 0 ? path.toLowerCase().slice(dot) : ''
+  return IMAGE_FILE_EXTENSIONS.includes(ext)
 }
 
-/** Classify a source string into a content branch. */
-type SourceKind = 'image-ref' | 'image-file' | 'video-file' | 'video-url' | 'zip' | 'document' | 'unknown'
+/**
+ * Classify a source string into a content branch.
+ * Order matters: image URLs are images; everything else with an http(s)
+ * prefix is treated as a video URL (Bilibili / YouTube / Douyin); then local
+ * files by extension; a JSON reference or bare id is an image reference
+ * (kept for session-record compatibility).
+ */
+type SourceKind = 'image-file' | 'video-file' | 'video-url' | 'zip' | 'document' | 'unknown'
 
 function classifySource(source: string): SourceKind {
   const lower = source.toLowerCase()
-  if (/^https?:\/\//.test(source)) return 'video-url'
+  if (/^https?:\/\//.test(source)) {
+    return isImageUrl(source) ? 'image-file' : 'video-url'
+  }
   const dot = lower.lastIndexOf('.')
   const ext = dot >= 0 ? lower.slice(dot) : ''
   if (IMAGE_FILE_EXTENSIONS.includes(ext)) return 'image-file'
   if (VIDEO_FILE_EXTENSIONS.includes(ext)) return 'video-file'
   if (ext === '.zip') return 'zip'
   if (isDocumentPath(source)) return 'document'
-  // JSON image reference or bare attachmentId.
-  if (lower.includes('attachmentid') || /^[a-z0-9_-]{10,}$/.test(source.trim())) return 'image-ref'
+  // JSON image reference (legacy session records) — exact shape check, not a
+  // loose substring, so a bare alphanumeric file name is never misread.
+  if (/^\s*\{\s*"attachmentId"/.test(source) || /^\s*\{\s*"path"/.test(source)) return 'image-file'
+  // Bare attachment id (legacy session records): attachment ids are
+  // sha256-style hashes with a colon, not arbitrary strings.
+  if (/^[a-f0-9]{8,}$/.test(source.trim()) || /^sha256:[a-f0-9]{8,}$/i.test(source.trim())) return 'image-file'
   return 'unknown'
-}
-
-/** Read a local image file and describe it with the vision model. */
-async function describeLocalImage(
-  ctx: Context,
-  visionScope: VisionScope,
-  path: string,
-  question: string,
-  signal: AbortSignal,
-): Promise<string> {
-  try {
-    const data = await readFile(path)
-    const dot = path.toLowerCase().lastIndexOf('.')
-    const ext = dot >= 0 ? path.toLowerCase().slice(dot) : ''
-    const credentials = ctx.get('credentials')
-    const resolveApiKey = async (ref: string): Promise<string | undefined> => {
-      if (credentials === undefined) return undefined
-      const resolvedCred = await credentials.resolve(credentialRef(ref))
-      return resolvedCred?.value
-    }
-    const providers = visionScope.get().providers.filter(provider => provider.enabled !== false)
-    const maxChars = visionScope.get().maxDescribeChars
-    const result = await describeImages(
-      providers,
-      resolveApiKey,
-      [{ mediaType: mediaTypeOf(ext) as 'image/png', data }],
-      maxChars,
-      signal,
-      question,
-    )
-    if (!result.ok) return '识图失败：' + result.message
-    return result.text
-  } catch (error) {
-    return '识图失败：' + (error instanceof Error ? error.message : String(error))
-  }
 }
 
 /** List a ZIP archive's contents. */
 async function listZip(path: string, question: string): Promise<string> {
   try {
-    const store = new ZipStore({ maxSize: DEFAULT_MAX_ZIP_SIZE, extractDir: DEFAULT_EXTRACT_DIR })
+    const store = new ZipStore({ maxSize: DEFAULT_MAX_ZIP_SIZE })
     const entries = await store.list(path)
     const fileCount = entries.filter(e => !e.isDirectory).length
     const dirCount = entries.filter(e => e.isDirectory).length
@@ -116,7 +87,6 @@ export function registerSeeTool(
   visionScope: VisionScope,
   audioScope: AudioScope,
   features: LooklookScope,
-  refRegistry: Map<string, ImageAttachmentRef>,
   videoRecognitionEnabled: () => boolean,
 ): void {
   ctx.tools.register(defineTool({
@@ -126,7 +96,7 @@ export function registerSeeTool(
       source: {
         type: 'string',
         required: true,
-        description: '内容来源：图片引用 JSON、文件路径（图片/视频/zip/文档如 docx/pdf/psd）、或视频链接 URL。',
+        description: '内容来源：文件路径（图片/视频/zip/文档如 docx/pdf/psd）、图片引用 JSON、或视频链接 URL。',
       },
       question: {
         type: 'string',
@@ -157,17 +127,12 @@ export function registerSeeTool(
       const kind = classifySource(source)
 
       switch (kind) {
-        case 'image-ref': {
-          if (!looklookFeatures(features).imageRecognition) {
-            return { text: '图像识别已关闭：请在插件设置中开启「识别图像」后再使用。' }
-          }
-          return { text: await describeImageByRef(ctx, visionScope, refRegistry, source, question, exec.signal) }
-        }
         case 'image-file': {
           if (!looklookFeatures(features).imageRecognition) {
             return { text: '图像识别已关闭：请在插件设置中开启「识别图像」后再使用。' }
           }
-          return { text: await describeLocalImage(ctx, visionScope, source, question, exec.signal) }
+          const cwd = exec.agent?.session.header.cwd
+          return { text: await describeImageFile(ctx, visionScope, source, question, exec.signal, cwd) }
         }
         case 'video-file':
         case 'video-url': {
@@ -181,7 +146,7 @@ export function registerSeeTool(
           return { text: await readDocumentFile(ctx, visionScope, audioScope, source, question, cwd, exec.signal) }
         }
         default:
-          return { text: `无法识别该内容类型（source=${source}）。支持：图片（引用或文件路径）、视频（文件或链接）、压缩包（.zip）、文档（.docx/.xlsx/.pptx/.pdf/.psd）。` }
+          return { text: `无法识别该内容类型（source=${source}）。支持：图片（文件路径）、视频（文件或链接）、压缩包（.zip）、文档（.docx/.xlsx/.pptx/.pdf/.psd）。` }
       }
     },
   }))
