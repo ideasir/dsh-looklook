@@ -67,9 +67,10 @@ export function apply(ctx: ClientContext): void {
   const usePending = bindSnapshotSelector(pending.store)
 
   /** Compose the model-facing + client-rendering notes for one staged file. */
-  const fileNote = (f: { name: string; path: string; size: number }): string => {
-    const visible = t('upload.message', { name: f.name, path: f.path })
-    const meta = JSON.stringify({ name: f.name, path: f.path, size: f.size })
+  const fileNote = (f: { name: string; path?: string; size: number }): string => {
+    const path = f.path ?? ''
+    const visible = t('upload.message', { name: f.name, path })
+    const meta = JSON.stringify({ name: f.name, path, size: f.size })
     return `【looklook:开始】${visible}【looklook:结束】\n【looklook:file】${meta}【looklook:file】`
   }
 
@@ -78,10 +79,22 @@ export function apply(ctx: ClientContext): void {
    * merged draft text; the caller decides when to submit.
    */
   const mergeNotesIntoDraft = (sessionId: string, draft: string): string => {
-    const staged = pending.get(sessionId)
+    // Only fully-uploaded files (path set) are merged; a file still
+    // uploading stays in the chip row for the next Enter.
+    const staged = pending.get(sessionId).filter(f => f.path !== undefined && f.path !== '' && f.uploading !== true)
     if (staged.length === 0) return draft
     const notes = staged.map(fileNote).join('\n')
-    pending.clear(sessionId)
+    const stillUploading = pending.get(sessionId).length !== staged.length
+    if (stillUploading) {
+      // Remove the merged ones, keep the uploading ones.
+      const remaining = pending.get(sessionId).filter(f => f.path === undefined || f.path === '' || f.uploading === true)
+      const state = { ...pending.store.getSnapshot() }
+      if (remaining.length > 0) state[sessionId] = remaining
+      else delete state[sessionId]
+      pending.store.set(state)
+    } else {
+      pending.clear(sessionId)
+    }
     return draft === '' ? notes : `${draft}\n${notes}`
   }
 
@@ -290,21 +303,26 @@ export function apply(ctx: ClientContext): void {
       // reset() — dispatch a dragend so the full-page drop overlay (the
       // frosted mask) dismisses instead of sticking.
       window.dispatchEvent(new DragEvent('dragend'))
-      // Upload now and show the file as a pending attachment chip — nothing
-      // is sent until the user presses Enter (like image attachments); the
-      // submit wrapper merges the paths into the outgoing message.
+      // Upload now: the chip appears IMMEDIATELY in an uploading state
+      // (spinner + progress) so the user sees it is working; the path lands
+      // when done. Nothing is sent until the user presses Enter.
       void (async () => {
-        const results = await Promise.all(files.map(async (file) => {
+        for (const file of files) {
+          const index = pending.get(sessionId).length
+          pending.add(sessionId, { name: file.name, size: file.size, uploading: true, progress: 0 })
           try {
-            const { path } = await uploadFile(sessionId, file)
-            return { name: file.name, path, size: file.size }
+            const { path } = await uploadFile(sessionId, file, (percent) => {
+              pending.update(sessionId, index, { progress: percent })
+            })
+            pending.update(sessionId, index, { path, uploading: false, progress: 100, error: undefined })
           } catch (error) {
             console.error('looklook upload failed:', file.name, error)
-            return null
+            pending.update(sessionId, index, {
+              uploading: false,
+              error: error instanceof Error ? error.message : String(error),
+            })
           }
-        }))
-        const staged = results.filter((r): r is { name: string; path: string; size: number } => r !== null)
-        for (const result of staged) pending.add(sessionId, result)
+        }
       })()
     }
     document.addEventListener('dragover', onDragOverCapture, true)

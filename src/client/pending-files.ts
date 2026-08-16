@@ -8,11 +8,17 @@
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 
-/** One staged file awaiting send. */
+/** One staged file awaiting send. While `uploading` is true, `path` is unset. */
 export interface PendingFile {
   name: string
-  path: string
+  path?: string
   size: number
+  /** Whether the file is still uploading. */
+  uploading?: boolean
+  /** Upload progress 0–100. */
+  progress?: number
+  /** Upload failure message (chip shows an error state). */
+  error?: string
 }
 
 export type PendingFilesState = Record<string, PendingFile[]>
@@ -21,6 +27,7 @@ export type PendingFilesState = Record<string, PendingFile[]>
 export interface PendingFilesController {
   store: SnapshotStore<PendingFilesState>
   add(sessionId: string, file: PendingFile): void
+  update(sessionId: string, index: number, patch: Partial<PendingFile>): void
   remove(sessionId: string, index: number): void
   clear(sessionId: string): void
   get(sessionId: string): PendingFile[]
@@ -34,6 +41,12 @@ export function createPendingFilesController(): PendingFilesController {
     store,
     add: (sessionId, file) => {
       store.set({ ...store.getSnapshot(), [sessionId]: [...get(sessionId), file] })
+    },
+    update: (sessionId, index, patch) => {
+      const list = get(sessionId)
+      if (index < 0 || index >= list.length) return
+      const next = list.map((item, i) => i === index ? { ...item, ...patch } : item)
+      store.set({ ...store.getSnapshot(), [sessionId]: next })
     },
     remove: (sessionId, index) => {
       const next = get(sessionId).filter((_, i) => i !== index)

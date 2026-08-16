@@ -16,8 +16,8 @@ export declare function isUploadableName(name: string): boolean;
  * large file never blocks the UI thread with a synchronous btoa loop.
  */
 export declare function fileToBase64(file: File): Promise<string>;
-/** Upload one file; returns the absolute path the host saved. */
-export declare function uploadFile(sessionId: string, file: File): Promise<{
+/** Upload one file via XMLHttpRequest (reports upload progress). */
+export declare function uploadFile(sessionId: string, file: File, onProgress?: (percent: number) => void): Promise<{
     path: string;
     name: string;
 }>;

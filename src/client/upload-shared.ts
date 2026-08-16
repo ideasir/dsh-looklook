@@ -42,17 +42,43 @@ export function fileToBase64(file: File): Promise<string> {
   })
 }
 
-/** Upload one file; returns the absolute path the host saved. */
-export async function uploadFile(sessionId: string, file: File): Promise<{ path: string; name: string }> {
+/** Upload one file via XMLHttpRequest (reports upload progress). */
+export async function uploadFile(
+  sessionId: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<{ path: string; name: string }> {
   const data = await fileToBase64(file)
-  const response = await fetch('/api/looklook-upload', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId, name: file.name, data }),
+  return new Promise((resolveBody, rejectBody) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', '/api/looklook-upload')
+    xhr.setRequestHeader('content-type', 'application/json')
+    // Upload progress: the request body is the base64 payload.
+    if (onProgress !== undefined) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) {
+          onProgress(Math.round((event.loaded / event.total) * 100))
+        }
+      }
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const body = JSON.parse(xhr.responseText) as { ok?: boolean; path?: string; error?: string }
+          if (body.ok !== true || body.path === undefined) {
+            rejectBody(new Error(body.error ?? `上传失败（HTTP ${xhr.status}）`))
+            return
+          }
+          resolveBody({ path: body.path, name: file.name })
+        } catch {
+          rejectBody(new Error('上传响应解析失败'))
+        }
+      } else {
+        rejectBody(new Error(`上传失败（HTTP ${xhr.status}）`))
+      }
+    }
+    xhr.onerror = () => rejectBody(new Error('上传失败：网络错误'))
+    xhr.onabort = () => rejectBody(new Error('上传已取消'))
+    xhr.send(JSON.stringify({ sessionId, name: file.name, data }))
   })
-  const body = await response.json() as { ok?: boolean; path?: string; error?: string }
-  if (body.ok !== true || body.path === undefined) {
-    throw new Error(body.error ?? `上传失败（HTTP ${response.status}）`)
-  }
-  return { path: body.path, name: file.name }
 }

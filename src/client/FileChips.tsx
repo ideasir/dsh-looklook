@@ -34,6 +34,8 @@ export function FileChips(props: FileChipsInjected) {
   const list = files ?? []
   if (list.length === 0) return null
   return (
+    <>
+    <style>{`@keyframes looklook-spin { to { transform: rotate(360deg); } }`}</style>
     <div
       style={{
         boxSizing: 'border-box',
@@ -59,14 +61,14 @@ export function FileChips(props: FileChipsInjected) {
     >
       {list.map((file, index) => (
         <span
-          key={file.path}
+          key={`${file.name}-${index}`}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
             gap: 6,
             maxWidth: 260,
             padding: '3px 8px 3px 6px',
-            border: '1px solid var(--dsw-alias-border-l2)',
+            border: `1px solid ${file.error !== undefined ? 'var(--dsw-alias-state-warn-border, var(--dsw-alias-border-l2))' : 'var(--dsw-alias-border-l2)'}`,
             borderRadius: 8,
             background: 'var(--dsw-alias-bg-layer-2)',
             fontSize: 12,
@@ -74,12 +76,54 @@ export function FileChips(props: FileChipsInjected) {
             color: 'var(--dsw-alias-label-primary)',
           }}
         >
-          <span style={{ display: 'grid', placeItems: 'center', flex: 'none', color: 'var(--dsw-alias-brand-primary)' }}>
-            <FileTypeIcon name={file.name} size={16} />
-          </span>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {file.name} <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{formatSize(file.size)}</span>
-          </span>
+          {file.uploading === true ? (
+            // Spinner + progress while uploading.
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+              <span style={{
+                width: 14,
+                height: 14,
+                borderRadius: '50%',
+                flex: 'none',
+                border: '2px solid var(--dsw-alias-border-l3)',
+                borderTopColor: 'var(--dsw-alias-brand-primary)',
+                animation: 'looklook-spin 0.8s linear infinite',
+              }} />
+              <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>上传中 {file.progress ?? 0}%</span>
+                <span style={{
+                  width: 120,
+                  height: 3,
+                  borderRadius: 2,
+                  background: 'var(--dsw-alias-border-l2)',
+                  overflow: 'hidden',
+                  marginTop: 2,
+                }}>
+                  <span style={{
+                    display: 'block',
+                    height: '100%',
+                    width: `${file.progress ?? 0}%`,
+                    background: 'var(--dsw-alias-brand-primary)',
+                    transition: 'width 0.2s ease',
+                  }} />
+                </span>
+              </span>
+            </span>
+          ) : (
+            <>
+              <span style={{ display: 'grid', placeItems: 'center', flex: 'none', color: 'var(--dsw-alias-brand-primary)' }}>
+                <FileTypeIcon name={file.name} size={16} />
+              </span>
+              <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {file.name} <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{formatSize(file.size)}</span>
+                </span>
+                {file.error !== undefined && (
+                  <span style={{ color: 'var(--dsw-alias-state-warn-label)', fontSize: 11 }}>{file.error}</span>
+                )}
+              </span>
+            </>
+          )}
           <button
             type="button"
             aria-label={`${t('upload.remove')}: ${file.name}`}
@@ -108,5 +152,6 @@ export function FileChips(props: FileChipsInjected) {
       </span>
     </div>
     </div>
+    </>
   )
 }
