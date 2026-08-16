@@ -188,7 +188,40 @@ def download_video(url, outdir, cookies_browser=None, cookies_file=None, proxy=N
     return None
 
 
-def extract_frames(video_path, outdir, duration, count):
+def detect_scenes(video_path, threshold=0.3, max_points=40):
+    """Detect scene-change timestamps via ffmpeg's scene filter.
+
+    Returns a sorted list of scene-boundary times (seconds). Each boundary is
+    a frame where the scene metric exceeded the threshold (i.e. a new shot).
+    """
+    cmd = ['ffmpeg', '-i', video_path, '-vf',
+           "select='gt(scene,%f)',showinfo" % threshold,
+           '-vsync', 'vfr', '-f', 'null', '-']
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    except Exception:  # noqa: BLE001
+        return []
+    times = []
+    for m in re.finditer(r'pts_time:([0-9.]+)', out.stderr):
+        t = float(m.group(1))
+        if t > 0.05:
+            times.append(round(t, 2))
+    # Deduplicate near-identical boundaries and cap the count.
+    dedup = []
+    for t in times:
+        if not dedup or t - dedup[-1] > 0.5:
+            dedup.append(t)
+    return dedup[:max_points]
+
+
+def extract_frames(video_path, outdir, duration, count, scenes=None):
+    """Extract frames at the given shot boundaries (or evenly if no scenes).
+
+    Scene-driven: one frame per detected shot, plus interior fillers inside
+    long shots so long slow scenes are not starved. The total never exceeds
+    `count` (the host-side cap). Falls back to even sampling when scene
+    detection produced nothing (static video).
+    """
     if not count or count < 1:
         return []
     frames_dir = os.path.join(outdir, 'frames')
@@ -196,10 +229,35 @@ def extract_frames(video_path, outdir, duration, count):
     dur = float(duration) if duration else 60.0
     if dur < 1:
         dur = 60.0
-    step = dur / (count + 1)
+
+    if scenes:
+        # One frame per shot boundary.
+        times = list(scenes)
+        # Fill inside long shots: any gap > 15s gets an interior sample.
+        filled = []
+        prev = 0.0
+        for t in times:
+            if t - prev > 15:
+                mid = round((prev + t) / 2, 2)
+                if 0 < mid < dur:
+                    filled.append(mid)
+            filled.append(t)
+            prev = t
+        if dur - prev > 15:
+            filled.append(round((prev + dur) / 2, 2))
+        times = sorted(set(round(t, 2) for t in filled if 0 < t < dur))
+    else:
+        # Even sampling fallback.
+        step = dur / (count + 1)
+        times = [round(step * i, 2) for i in range(1, count + 1) if step * i < dur]
+
+    # Enforce the cap, keeping the first `count` samples (evenly representative).
+    if len(times) > count:
+        idx = [round(i * (len(times) - 1) / (count - 1)) for i in range(count)]
+        times = [times[i] for i in idx]
+
     paths = []
-    for i in range(1, count + 1):
-        t = step * i
+    for i, t in enumerate(times, 1):
         out = os.path.join(frames_dir, 'f%03d.jpg' % i)
         cmd = ['ffmpeg', '-y', '-ss', '%.2f' % t, '-i', video_path,
                '-frames:v', '1', '-vf', 'scale=640:-2', '-q:v', '3', out]
@@ -522,9 +580,11 @@ def analyze_local(path, outdir, result, opts, want_transcript, want_frames,
             warnings.append('transcript truncated from %d to %d chars' % (full_len, max_chars))
     result['transcript'] = transcript
 
-    # 3) Frames straight from the local file.
+    # 3) Frames straight from the local file (scene-driven).
     if want_frames > 0:
-        result['frames'] = extract_frames(path, outdir, probe['duration'], want_frames)
+        scenes = detect_scenes(path)
+        result['scenes'] = scenes
+        result['frames'] = extract_frames(path, outdir, probe['duration'], want_frames, scenes=scenes)
         result['video_path'] = path
 
 
@@ -656,7 +716,9 @@ def main():
                 warnings.append('video download failed: %s' % e)
         if video_path:
             duration = (detail or {}).get('duration', 0) / 1000.0 if is_douyin else info.get('duration')
-            result['frames'] = extract_frames(video_path, outdir, duration, want_frames)
+            scenes = detect_scenes(video_path)
+            result['scenes'] = scenes
+            result['frames'] = extract_frames(video_path, outdir, duration, want_frames, scenes=scenes)
             result['video_path'] = video_path
         else:
             warnings.append('no video available for frames')
