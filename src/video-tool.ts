@@ -4,17 +4,22 @@
  * URL (Bilibili / YouTube / Douyin / generic via the vendored Python worker).
  *
  * Pipeline (all text flows to the text-only main model):
- *   1. vendor worker.py extracts metadata + transcript (platform subtitles
- *      first, else local faster-whisper ASR) + evenly spaced frames.
- *   2. When L3 audio understanding is configured (audioUnderstanding switch
- *      AND an audio-capable provider), a sample of the audio track is sent
- *      to the audio model for tone/music/pace; otherwise route A (transcript
- *      only) applies and the L3 block is omitted.
- *   3. Frames are staged on disk; their paths are returned so the main model
- *      can ask for a closer look (or the vision model can be extended later).
+ *   1. vendor worker.py extracts metadata + transcript (platform/embedded
+ *      subtitles first; else it prepares an audio file) + frames.
+ *   2. Audio understanding (L2+L3 merged, capability-probed, no user label):
+ *      - if an audio API provider is configured, try the HIGH route first
+ *        (chat/completions + input_audio → transcript + tone + music + pace
+ *        in one call); on a format rejection fall back to the LOW route
+ *        (/v1/audio/transcriptions → transcript only). The probed capability
+ *        is remembered per provider to avoid repeating the failed attempt.
+ *      - else, if the local ASR install exists, use it (transcript only).
+ *      - else, no audio understanding (subtitles only).
+ *   3. Frames are described by the vision model (each frame, structured
+ *      prompt) and returned as a "画面时间线" so the main model sees what
+ *      happened visually instead of bare image paths.
  *
- * All external calls are subprocesses of the vendored worker; missing Python
- * deps surface as a classified message instead of a crash.
+ * All external calls are subprocesses of the vendored worker or direct HTTP;
+ * missing dependencies surface as classified messages instead of a crash.
  */
 
 import { spawn } from 'node:child_process'
@@ -24,12 +29,20 @@ import { fileURLToPath } from 'node:url'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import type { AudioScope } from './settings.ts'
-import { audioEnabled, enabledAudioProviders } from './settings.ts'
+import type { AudioProviderConfig, AudioScope, VisionScope } from './settings.ts'
+import { enabledAudioProviders, enabledProviders } from './settings.ts'
 import { chatCompletionsUrl } from './vision-client.ts'
 
 /** The vendored worker's directory (scripts/video-worker next to this file). */
 const WORKER_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'video-worker')
+
+/** The local ASR install root: sibling of the plugin package (same formula as
+ * asr-install.ts: lib/ → plugin root → node_modules/…). */
+const ASR_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'looklook-asr')
+/** The local ASR install marker file (set by the one-click installer). */
+const LOCAL_ASR_MARKER = join(ASR_DIR, 'ready')
+/** The local ASR transcribe script (written by the installer). */
+const LOCAL_ASR_SCRIPT = join(ASR_DIR, 'transcribe.py')
 
 /** Worker stdout JSON (the stable contract with worker.py). */
 interface WorkerOutput {
@@ -45,19 +58,31 @@ interface WorkerOutput {
   } | null
   frames?: Array<{ time: number; path: string }>
   video_path?: string
+  audio_path?: string
 }
 
-/** One L3 audio-understanding result. */
+/** One audio-understanding result. */
 interface AudioUnderstanding {
   ok: boolean
+  /** Whether the HIGH route (transcript + tone/music) was used. */
+  high?: boolean
   text?: string
   error?: string
 }
 
+/** Probed capability of one audio provider. */
+type AudioCapability = 'unknown' | 'high' | 'low'
+
+/** Per-provider probed capability (keyed by baseURL+model). */
+const audioCapabilityCache = new Map<string, AudioCapability>()
+
+/** Structured prompt for describing one video frame (vision model). */
+const FRAME_PROMPT = '这是一段视频中的一帧画面。请描述：1) 整体场景与氛围 2) 主要人物/主体及其外貌、表情、动作 3) 画面中的文字或标识 4) 艺术风格 5) 光线与色彩。逐项回答，尽量具体，只说画面中真实可见的内容。'
+
 /**
  * Run the vendored Python worker as a subprocess.
  * @param source - local file path or video URL.
- * @param opts - worker options (frames, lang, asr model, proxy).
+ * @param opts - worker options (frames, lang, proxy).
  * @returns the parsed worker JSON.
  */
 function runWorker(
@@ -73,8 +98,6 @@ function runWorker(
       cwd: WORKER_DIR,
       env: {
         ...process.env,
-        // Model downloads fail on direct HF; the mirror works without proxy.
-        ...(process.env.HF_ENDPOINT === undefined ? { HF_ENDPOINT: 'https://hf-mirror.com' } : {}),
         PYTHONIOENCODING: 'utf-8',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -123,58 +146,186 @@ function runWorker(
   })
 }
 
-/**
- * L3: send a sample of the video's audio track to an audio-capable model to
- * understand tone / music / pace. Route A (transcript only) skips this.
- */
-async function understandAudio(
-  videoPath: string,
-  providers: ReturnType<typeof enabledAudioProviders>,
-  resolveApiKey: (ref: string) => Promise<string | undefined>,
-  question: string,
-  signal: AbortSignal,
-): Promise<AudioUnderstanding> {
-  // Extract up to 60s of audio (16 kHz mono WAV) for the audio model.
+/** Extract up to 60s of audio as 16 kHz mono WAV for the audio model. */
+async function sampleAudio(videoPath: string, signal: AbortSignal): Promise<string> {
   const tmpDir = join(WORKER_DIR, '..', '..', 'tmp-worker-out')
   const wav = join(tmpDir, 'audio_sample.wav')
   await runFfmpeg(['-y', '-i', videoPath, '-t', '60', '-vn', '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1', wav], signal)
-  const data = await readFile(wav)
-  const payload = {
-    model: providers[0]?.model ?? '',
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'text', text: `请听这段视频音频，回答问题：${question}。注意语气、节奏、背景音乐等声音细节。只输出回答内容本身。` },
-        { type: 'input_audio', input_audio: { data: data.toString('base64'), format: 'wav' } },
-      ],
-    }],
-  }
+  return wav
+}
+
+/** HIGH route: chat/completions + input_audio (transcript + tone/music/pace). */
+async function audioHigh(
+  provider: AudioProviderConfig,
+  apiKey: string,
+  wavPath: string,
+  question: string,
+  signal: AbortSignal,
+): Promise<{ ok: true; text: string } | { ok: false; reject: boolean; error: string }> {
+  const data = await readFile(wavPath)
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(new Error('audio timeout')), providers[0]?.timeoutMs ?? 30_000)
+  const timeout = setTimeout(() => controller.abort(new Error('audio timeout')), provider.timeoutMs ?? 60_000)
   const upstream = signal.aborted ? signal : AbortSignal.any([signal, controller.signal])
   try {
-    const response = await fetch(chatCompletionsUrl(providers[0]?.baseURL ?? ''), {
+    const response = await fetch(chatCompletionsUrl(provider.baseURL), {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${await resolveApiKey(providers[0]?.apiKeyEnv ?? '')}`,
-      },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
       redirect: 'error',
       signal: upstream,
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        model: provider.model,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: `请听这段视频音频，回答问题：${question}。请同时提供：1) 对白文字（逐句） 2) 说话者的语气/情绪 3) 背景音乐风格与氛围 4) 节奏特点。只输出内容本身。` },
+            { type: 'input_audio', input_audio: { data: data.toString('base64'), format: 'wav' } },
+          ],
+        }],
+      }),
     })
-    if (!response.ok) return { ok: false, error: `音频理解失败（HTTP ${response.status}）` }
-    const body = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> }
-    const text = typeof body.choices?.[0]?.message?.content === 'string'
-      ? body.choices[0].message.content.trim()
-      : ''
-    if (text === '') return { ok: false, error: '音频模型返回了空内容' }
+    if (response.status === 400 || response.status === 415 || response.status === 422) {
+      return { ok: false, reject: true, error: `模型不支持音频输入（HTTP ${response.status}）` }
+    }
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, reject: false, error: `音频模型鉴权失败（HTTP ${response.status}），请检查 API Key` }
+    }
+    if (response.status === 404) {
+      return { ok: false, reject: false, error: `音频模型不存在（HTTP 404），请检查模型名` }
+    }
+    if (!response.ok) return { ok: false, reject: false, error: `音频理解失败（HTTP ${response.status}）` }
+    const text = extractAssistantText(await response.json())
+    if (text === '') return { ok: false, reject: true, error: '音频模型返回了空内容' }
     return { ok: true, text }
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    if (signal.aborted) return { ok: false, reject: false, error: '已取消' }
+    return { ok: false, reject: false, error: error instanceof Error ? error.message : String(error) }
   } finally {
     clearTimeout(timeout)
   }
+}
+
+/** LOW route: /v1/audio/transcriptions (transcript only). */
+async function audioLow(
+  provider: AudioProviderConfig,
+  apiKey: string,
+  wavPath: string,
+  signal: AbortSignal,
+): Promise<{ ok: true; text: string } | { ok: false; reject: boolean; error: string }> {
+  const data = await readFile(wavPath)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(new Error('audio timeout')), provider.timeoutMs ?? 60_000)
+  const upstream = signal.aborted ? signal : AbortSignal.any([signal, controller.signal])
+  try {
+    const form = new FormData()
+    form.append('file', new Blob([data], { type: 'audio/wav' }), 'audio.wav')
+    form.append('model', provider.model)
+    const base = provider.baseURL.trim().replace(/\/+$/, '')
+    const url = base.endsWith('/audio/transcriptions') ? base : `${base}/audio/transcriptions`
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${apiKey}` },
+      redirect: 'error',
+      signal: upstream,
+      body: form,
+    })
+    if (response.status === 400 || response.status === 415 || response.status === 422) {
+      return { ok: false, reject: true, error: `转写端点拒绝请求（HTTP ${response.status}）` }
+    }
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, reject: false, error: `转写鉴权失败（HTTP ${response.status}）` }
+    }
+    if (!response.ok) return { ok: false, reject: false, error: `转写失败（HTTP ${response.status}）` }
+    const body = await response.json() as { text?: unknown }
+    const text = typeof body.text === 'string' ? body.text.trim() : ''
+    if (text === '') return { ok: false, reject: true, error: '转写返回了空内容' }
+    return { ok: true, text }
+  } catch (error) {
+    if (signal.aborted) return { ok: false, reject: false, error: '已取消' }
+    return { ok: false, reject: false, error: error instanceof Error ? error.message : String(error) }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+/** Local ASR (one-click installed) — LOW route only. */
+async function audioLocal(
+  wavPath: string,
+  signal: AbortSignal,
+): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  return new Promise((resolveBody) => {
+    const script = LOCAL_ASR_SCRIPT
+    const child = spawn('python3', [script, wavPath], {
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString('utf8') })
+    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8') })
+    child.on('close', (code) => {
+      if (settled) return
+      settled = true
+      if (code !== 0) {
+        resolveBody({ ok: false, error: stderr.trim().slice(-300) || '本地 ASR 失败' })
+        return
+      }
+      const text = stdout.trim()
+      resolveBody(text === '' ? { ok: false, error: '本地 ASR 返回空内容' } : { ok: true, text })
+    })
+    signal.addEventListener('abort', () => {
+      if (settled) return
+      settled = true
+      child.kill('SIGKILL')
+      resolveBody({ ok: false, error: '已取消' })
+    }, { once: true })
+  })
+}
+
+/**
+ * Capability-probed audio understanding: HIGH first, fall back to LOW only on
+ * format rejection; remembers the probe per provider. Returns null when no
+ * audio path is available or nothing is configured/installed.
+ */
+async function understandAudio(
+  providers: readonly AudioProviderConfig[],
+  resolveApiKey: (ref: string) => Promise<string | undefined>,
+  audioPath: string,
+  question: string,
+  signal: AbortSignal,
+): Promise<AudioUnderstanding | null> {
+  const wavPath = await sampleAudio(audioPath, signal)
+  for (const provider of providers) {
+    const key = `${provider.baseURL}|${provider.model}`
+    const cached = audioCapabilityCache.get(key) ?? 'unknown'
+    const apiKey = await resolveApiKey(provider.apiKeyEnv)
+    if (apiKey === undefined) continue
+    if (cached !== 'low') {
+      const high = await audioHigh(provider, apiKey, wavPath, question, signal)
+      if (high.ok) {
+        audioCapabilityCache.set(key, 'high')
+        return { ok: true, high: true, text: high.text }
+      }
+      if (high.reject) {
+        audioCapabilityCache.set(key, 'low')
+      } else {
+        return { ok: false, high: cached === 'unknown', error: high.error }
+      }
+    }
+    const low = await audioLow(provider, apiKey, wavPath, signal)
+    if (low.ok) {
+      audioCapabilityCache.set(key, 'low')
+      return { ok: true, high: false, text: low.text }
+    }
+    if (!low.reject) return { ok: false, high: false, error: low.error }
+  }
+  // No usable API provider — try the local one-click ASR install.
+  const localOk = await import('node:fs').then(fs => fs.promises.access(LOCAL_ASR_MARKER).then(() => true).catch(() => false))
+  if (localOk) {
+    const local = await audioLocal(wavPath, signal)
+    if (local.ok) return { ok: true, high: false, text: local.text }
+  }
+  return null
 }
 
 /** Run one ffmpeg command (used for audio sampling). */
@@ -200,11 +351,72 @@ function runFfmpeg(args: readonly string[], signal: AbortSignal): Promise<void> 
   })
 }
 
-/** Compose the model-visible report from worker output (+ optional L3). */
+/**
+ * Extract the assistant's answer from a chat-completions response. Some
+ * endpoints (e.g. aplan-vl → sensenova-flash-lite) put the answer in
+ * `message.reasoning` and leave `content` empty; accept both.
+ */
+function extractAssistantText(body: unknown): string {
+  const choice = (body as { choices?: Array<{ message?: Record<string, unknown> }> })?.choices?.[0]
+  const message = choice?.message
+  if (message === undefined) return ''
+  for (const field of ['content', 'reasoning']) {
+    const value = message[field]
+    if (typeof value === 'string' && value.trim() !== '') return value.trim()
+  }
+  return ''
+}
+
+/** Describe one frame with the vision model (structured prompt). */
+async function describeFrame(
+  providers: ReturnType<typeof enabledProviders>,
+  resolveApiKey: (ref: string) => Promise<string | undefined>,
+  framePath: string,
+  at: number,
+  signal: AbortSignal,
+): Promise<string> {
+  for (const provider of providers) {
+    const apiKey = await resolveApiKey(provider.apiKeyEnv)
+    if (apiKey === undefined) continue
+    try {
+      const data = await readFile(framePath)
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(new Error('vision timeout')), provider.timeoutMs ?? 30_000)
+      const upstream = signal.aborted ? signal : AbortSignal.any([signal, controller.signal])
+      const response = await fetch(chatCompletionsUrl(provider.baseURL), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+        redirect: 'error',
+        signal: upstream,
+        body: JSON.stringify({
+          model: provider.model,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: FRAME_PROMPT },
+              { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${data.toString('base64')}` } },
+            ],
+          }],
+          max_tokens: 400,
+        }),
+      })
+      clearTimeout(timeout)
+      if (!response.ok) continue
+      const text = extractAssistantText(await response.json())
+      if (text !== '') return `第${Math.round(at)}秒：${text}`
+    } catch {
+      // try the next provider
+    }
+  }
+  return `第${Math.round(at)}秒：（画面描述失败，帧路径 ${framePath}）`
+}
+
+/** Compose the model-visible report from worker output + audio + frames. */
 function composeReport(
   out: WorkerOutput,
   question: string,
   audio: AudioUnderstanding | null,
+  frameDescs: string[],
 ): string {
   const parts: string[] = []
   if (out.meta !== undefined && Object.keys(out.meta).length > 0) {
@@ -216,21 +428,18 @@ function composeReport(
       m.source === 'local-file' ? `文件：${m.path}` : m.webpage_url !== undefined ? `链接：${m.webpage_url}` : '',
     ].filter(Boolean).join('\n'))
   }
-  const transcript = out.transcript
-  if (transcript !== null && transcript !== undefined) {
-    const source = transcript.source === 'subtitle' ? '字幕' : '语音识别'
-    const lang = transcript.language ?? ''
-    const head = `【配音稿（${source}${lang ? ` / ${lang}` : ''}）】`
-    parts.push(`${head}\n${transcript.text?.trim() ?? ''}`.trim())
-  } else {
-    parts.push('【配音稿】无（该视频没有可用的字幕或音轨）')
+  if (out.transcript !== null && out.transcript !== undefined) {
+    const source = out.transcript.source === 'subtitle' ? '字幕' : '语音识别'
+    const lang = out.transcript.language ?? ''
+    parts.push(`【配音稿（${source}${lang ? ` / ${lang}` : ''}）】\n${out.transcript.text?.trim() ?? ''}`.trim())
   }
   if (audio !== null && audio !== undefined) {
-    parts.push(audio.ok ? `【声音理解】${audio.text}` : `【声音理解】${audio.error ?? '不可用'}`)
+    parts.push(audio.ok
+      ? `【声音理解${audio.high === true ? '（含语气/音乐/节奏）' : ''}】${audio.text}`
+      : `【声音理解】${audio.error ?? '不可用'}`)
   }
-  const frames = out.frames ?? []
-  if (frames.length > 0) {
-    parts.push(`【画面帧】已抽取 ${frames.length} 帧，路径：${frames.map(f => f.path).join('，')}（如需查看具体画面细节，可告诉我分析哪一帧）`)
+  if (frameDescs.length > 0) {
+    parts.push(`【画面时间线】\n${frameDescs.join('\n')}`)
   }
   parts.push(`【用户问题】${question}`)
   return parts.join('\n\n')
@@ -240,10 +449,12 @@ function composeReport(
 export function registerWatchTool(
   ctx: Context,
   audioScope: AudioScope,
+  visionScope: VisionScope,
+  videoRecognitionEnabled: () => boolean,
 ): void {
   ctx.tools.register(defineTool({
     name: 'looklook_watch',
-    description: '观看并分析一个视频（支持本地视频文件路径，或 B站/YouTube/抖音/其他平台的视频链接）。返回视频元数据、配音稿（字幕或语音识别）、画面帧路径，以及（若配置了音频理解模型）声音细节。source 填视频文件路径或链接；question 填你要询问的视频内容相关问题（用户问什么就针对性地问什么）。',
+    description: '观看并分析一个视频（支持本地视频文件路径，或 B站/YouTube/抖音/其他平台的视频链接）。返回视频元数据、配音稿（字幕或语音识别）、声音理解（语气/音乐，若配置了音频模型）与画面时间线。source 填视频文件路径或链接；question 填你要询问的视频内容相关问题（用户问什么就针对性地问什么）。',
     parameters: {
       source: {
         type: 'string',
@@ -271,6 +482,9 @@ export function registerWatchTool(
     },
     isConcurrencySafe: () => false,
     async execute(args: { source?: unknown; question?: unknown }, exec) {
+      if (!videoRecognitionEnabled()) {
+        return { text: '视频识别已关闭：请在插件设置中开启「识别视频」后使用。' }
+      }
       const source = typeof args.source === 'string' && args.source.trim() !== '' ? args.source.trim() : ''
       if (source === '') return { text: '看视频失败：缺少 source 参数（视频文件路径或链接）' }
       const question = typeof args.question === 'string' && args.question.trim() !== ''
@@ -282,9 +496,8 @@ export function registerWatchTool(
           source,
           {
             transcript: true,
-            frames: 4,
+            frames: 10,
             lang: 'zh',
-            asr_model: 'small',
             ...(isUrl ? { proxy: process.env.DISCORD_PROXY } : {}),
           },
           exec.signal,
@@ -292,21 +505,35 @@ export function registerWatchTool(
         if (!workerOut.ok) {
           return { text: `看视频失败：${workerOut.error ?? '未知错误'}` }
         }
-        // L3: audio understanding only when the user enabled it AND a provider
-        // is configured AND we have a local video file to sample.
-        let audio: AudioUnderstanding | null = null
-        const l3On = audioEnabled(audioScope)
-        const videoPath = workerOut.video_path
-        if (l3On && videoPath !== undefined && videoPath !== '') {
-          const credentials = ctx.get('credentials')
-          const resolveApiKey = async (ref: string): Promise<string | undefined> => {
-            if (credentials === undefined) return undefined
-            const resolvedCred = await credentials.resolve(credentialRef(ref))
-            return resolvedCred?.value
-          }
-          audio = await understandAudio(videoPath, enabledAudioProviders(audioScope), resolveApiKey, question, exec.signal)
+
+        const credentials = ctx.get('credentials')
+        const resolveApiKey = async (ref: string): Promise<string | undefined> => {
+          if (credentials === undefined) return undefined
+          const resolvedCred = await credentials.resolve(credentialRef(ref))
+          return resolvedCred?.value
         }
-        return { text: composeReport(workerOut, question, audio) }
+
+        // Audio understanding: probe capability, HIGH then LOW, then local.
+        let audio: AudioUnderstanding | null = null
+        const audioPath = workerOut.audio_path ?? workerOut.video_path
+        if (audioPath !== undefined && audioPath !== '' && workerOut.transcript === null) {
+          audio = await understandAudio(
+            enabledAudioProviders(audioScope),
+            resolveApiKey,
+            audioPath,
+            question,
+            exec.signal,
+          )
+        }
+
+        // Frames → vision model (画面时间线).
+        const frameDescs: string[] = []
+        const visionProviders = enabledProviders(visionScope)
+        for (const frame of workerOut.frames ?? []) {
+          frameDescs.push(await describeFrame(visionProviders, resolveApiKey, frame.path, frame.time, exec.signal))
+        }
+
+        return { text: composeReport(workerOut, question, audio, frameDescs) }
       } catch (error) {
         return { text: `看视频失败：${error instanceof Error ? error.message : String(error)}` }
       }

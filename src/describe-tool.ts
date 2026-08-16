@@ -75,7 +75,7 @@ export function registerDescribeTool(
     },
     isConcurrencySafe: () => true,
     async execute(args: { image_ref?: unknown; question?: unknown }, exec) {
-      if (!looklookFeatures(features).multimodal) {
+      if (!looklookFeatures(features).imageRecognition) {
         return { text: '多模态功能未开启：请在插件设置中开启「多模态」后再使用识图能力。' }
       }
       const rawRef = typeof args.image_ref === 'string' ? args.image_ref : ''

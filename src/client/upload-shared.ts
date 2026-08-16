@@ -1,22 +1,24 @@
 /**
- * Shared upload logic for dsh-looklook: upload one or more archive/video
- * files through the plugin's `/api/looklook-upload` route (saved into the
- * session workspace `.uploads/`) and return their paths. The caller stages
- * the notes into the input draft — nothing is sent until the user presses
- * Enter.
+ * Shared upload logic for dsh-looklook: upload any non-image file through the
+ * plugin's `/api/looklook-upload` route (saved into the session workspace
+ * `.uploads/`) and return its path. The caller stages the note into the
+ * input draft — nothing is sent until the user presses Enter.
  *
- * NOTE: this client-side extension list is a MIRROR of the authoritative
- * host whitelist in `src/upload.ts` (ARCHIVE_EXTENSIONS + VIDEO_EXTENSIONS).
- * Keep them in sync; the verify scripts assert equality.
+ * The channel accepts EVERY extension (installing the plugin unlocks all
+ * uploads); only browser-native image types are left to the DSH image
+ * pipeline. This file mirrors the host route's no-whitelist policy.
  */
 
-/** Accepted extensions (archives + video), mirroring `src/upload.ts`. */
-export const ACCEPT_EXTENSIONS = ['.zip', '.7z', '.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v']
+/** Image extensions that ride the native DSH pipeline (never intercepted). */
+const NATIVE_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.avif']
 
-/** Whether a file name is uploadable through the looklook channel. */
+/** Whether a file name should be intercepted by the looklook upload channel
+ * (i.e. it is NOT a native image). */
 export function isUploadableName(name: string): boolean {
   const lower = name.toLowerCase()
-  return ACCEPT_EXTENSIONS.some(ext => lower.endsWith(ext))
+  const dot = lower.lastIndexOf('.')
+  const ext = dot >= 0 ? lower.slice(dot) : ''
+  return !NATIVE_IMAGE_EXTENSIONS.includes(ext)
 }
 
 /**

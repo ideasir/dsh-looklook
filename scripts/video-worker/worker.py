@@ -188,30 +188,6 @@ def download_video(url, outdir, cookies_browser=None, cookies_file=None, proxy=N
     return None
 
 
-def asr_transcribe(audio_path, lang, model_name):
-    try:
-        from faster_whisper import WhisperModel
-    except Exception as e:  # noqa: BLE001
-        return None, 'faster_whisper not installed: %s' % e
-    try:
-        model = WhisperModel(model_name, device='cpu', compute_type='int8')
-    except Exception as e:  # noqa: BLE001
-        return None, 'model load failed (%s): %s' % (model_name, e)
-    try:
-        segments, info = model.transcribe(
-            audio_path,
-            language=lang if lang and lang != 'auto' else None,
-            vad_filter=True,
-            beam_size=5,
-        )
-        segs = [{'start': round(s.start, 2), 'end': round(s.end, 2), 'text': s.text.strip()} for s in segments]
-        text = '\n'.join(s['text'] for s in segs if s['text'])
-        meta = {'language': getattr(info, 'language', None), 'duration': getattr(info, 'duration', None)}
-        return {'text': text, 'segments': segs, 'language': meta['language']}, None
-    except Exception as e:  # noqa: BLE001
-        return None, 'transcribe failed: %s' % e
-
-
 def extract_frames(video_path, outdir, duration, count):
     if not count or count < 1:
         return []
@@ -505,7 +481,7 @@ def extract_local_subtitles(path, outdir):
 
 
 def analyze_local(path, outdir, result, opts, want_transcript, want_frames,
-                  lang, asr_model, max_chars, warnings):
+                  lang, max_chars, warnings):
     """Full pipeline for a LOCAL video file (uploaded to .uploads/):
     probe → embedded subtitles (cheapest) → else ASR → frames."""
     probe = probe_local(path)
@@ -532,14 +508,10 @@ def analyze_local(path, outdir, result, opts, want_transcript, want_frames,
                 if text and text.strip():
                     transcript = {'source': 'subtitle', 'file': path, 'language': 'embedded',
                                   'text': text, 'segments': None}
-        # 2) ASR fallback when no usable subtitle.
+        # 2) No usable subtitle: hand the audio to the host (capability-probed
+        #    audio understanding / local ASR).
         if transcript is None and probe['has_audio']:
-            asr, err = asr_transcribe(path, lang, asr_model)
-            if asr:
-                transcript = {'source': 'asr', 'file': path, 'language': asr['language'],
-                              'text': asr['text'], 'segments': asr['segments']}
-            else:
-                warnings.append('asr failed: %s' % err)
+            result['audio_path'] = path
         elif transcript is None:
             warnings.append('no subtitles and no audio track')
 
@@ -578,14 +550,13 @@ def main():
     cookies_browser = opts.get('cookies_browser') or None
     cookies_file = opts.get('cookies_file') or None
     proxy = opts.get('proxy') or None
-    asr_model = opts.get('asr_model', 'small')
     max_chars = int(opts.get('max_chars', 20000) or 20000)
     warnings = []
     result = {'ok': True, 'warnings': warnings}
 
     if local_path is not None:
         analyze_local(local_path, outdir, result, opts, want_transcript, want_frames,
-                      lang, asr_model, max_chars, warnings)
+                      lang, max_chars, warnings)
         print(json.dumps(result, ensure_ascii=False))
         return
 
@@ -617,12 +588,16 @@ def main():
         print(json.dumps(result, ensure_ascii=False))
         return
 
-    # ---- transcript: subtitles first, then ASR ----
+    # ---- transcript: subtitles first; else leave audio for the host ASR ----
+    # The host (looklook_watch tool) owns speech-to-text: it calls an
+    # OpenAI-compatible /v1/audio/transcriptions endpoint with the audio file
+    # this worker prepares. Subtitles (platform or embedded) are still
+    # extracted here because they are free and more accurate than ASR.
     langs = pick_langs(lang)
     transcript = None
     sub_files = []
     if is_douyin:
-        warnings.append('douyin has no downloadable subtitles; using ASR')
+        warnings.append('douyin has no downloadable subtitles; ASR on host side')
     else:
         try:
             sub_files = download_subs(url, outdir, langs, cookies_browser, cookies_file, proxy)
@@ -640,7 +615,7 @@ def main():
         if is_douyin and detail:
             try:
                 video_file = douyin_download(url, outdir, detail, proxy)
-                audio_path = video_file  # faster-whisper reads mp4 directly
+                audio_path = video_file
                 result['video_path'] = video_file
             except Exception as e:  # noqa: BLE001
                 warnings.append('douyin download failed: %s' % e)
@@ -650,11 +625,8 @@ def main():
             except Exception as e:  # noqa: BLE001
                 warnings.append('audio download failed: %s' % e)
         if audio_path:
-            asr, err = asr_transcribe(audio_path, lang, asr_model)
-            if asr:
-                transcript = {'source': 'asr', 'file': audio_path, 'language': asr['language'], 'text': asr['text'], 'segments': asr['segments']}
-            else:
-                warnings.append('asr failed: %s' % err)
+            # Host-side ASR turns this into the transcript.
+            result['audio_path'] = audio_path
         else:
             warnings.append('no subtitles and no audio available')
 

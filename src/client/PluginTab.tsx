@@ -2,9 +2,10 @@
  * LooklookPluginCard: the looklook configuration card inside the Plugins
  * settings section's "插件配置" tab (`settings.plugin.item`). Uses the same
  * collapsible card chrome as the agent-loop / bash / web-search cards:
- * a header (title + description + chevron) that discloses the controls:
- * - the master switches (多模态 / 更多扩展名);
- * - the vision-model configuration, visible while 多模态 is ON.
+ * a header (title + description + chevron) that discloses:
+ * - the feature switches (识别图像 / 识别视频);
+ * - the model configuration (视觉模型 + 音频模型 + 本地 ASR 一键安装),
+ *   visible while 识别图像 is ON.
  */
 
 import { useState } from 'react'
@@ -13,7 +14,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FeatureController, FeatureState } from './feature-controller.ts'
 import { LooklookFeaturesSection, type FeaturesInjected } from './Features.tsx'
-import { VisionSettingsSection, type VisionSettingsInjected } from './VisionSettings.tsx'
+import { ModelSettingsSection, type ModelSettingsInjected } from './VisionSettings.tsx'
 
 /** Injected face supplied by the plugin apply closure. */
 export interface LooklookCardInjected {
@@ -21,14 +22,14 @@ export interface LooklookCardInjected {
   api: IApiClient
   /** Bound translate for the `looklook` namespace. */
   t: TranslateNS<'looklook'>
-  /** Feature controller (multimodal / zip toggles). */
+  /** Feature controller (image / video toggles). */
   features: FeatureController
   /** Reactive snapshot of the feature switches. */
   useFeatures: () => FeatureState
   /** Probe one provider's `/models` endpoint through the host RPC. */
-  listModels: VisionSettingsInjected['listModels']
-  /** Reactive snapshot of the `multimodal` master switch. */
-  useMultimodal: () => boolean
+  listModels: ModelSettingsInjected['listModels']
+  /** Reactive snapshot of the image recognition master switch. */
+  useImageRecognition: () => boolean
 }
 
 const css = {
@@ -72,12 +73,12 @@ const css = {
 
 /** The plugin-configuration card body. */
 export function LooklookPluginCard(props: LooklookCardInjected) {
-  const { api, t, features, useFeatures, listModels, useMultimodal } = props
+  const { api, t, features, useFeatures, listModels, useImageRecognition } = props
   const [open, setOpen] = useState(false)
   // Hook order stays stable: both hooks run before any conditional return.
-  const multimodalOn = useMultimodal()
+  const imageRecognitionOn = useImageRecognition()
   const featuresProps: FeaturesInjected = { api, t, features, useFeatures }
-  const visionProps: VisionSettingsInjected = { api, t, listModels, useMultimodal }
+  const modelProps: ModelSettingsInjected = { api, t, listModels }
   const title = t('card.title')
   return (
     <li style={css.card}>
@@ -99,10 +100,10 @@ export function LooklookPluginCard(props: LooklookCardInjected) {
       {open && (
         <div style={css.body}>
           <LooklookFeaturesSection {...featuresProps} />
-          {multimodalOn && (
+          {imageRecognitionOn && (
             <>
               <div style={{ border: 'none', borderTop: '1px solid var(--dsw-alias-border-l2)' }} />
-              <VisionSettingsSection {...visionProps} />
+              <ModelSettingsSection {...modelProps} />
             </>
           )}
         </div>

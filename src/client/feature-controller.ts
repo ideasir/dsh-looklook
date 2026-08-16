@@ -1,7 +1,7 @@
 /**
  * Plugin feature controller: reads the `looklook` settings namespace
- * (multimodal / zip master switches) through the wire settings API and
- * reports the 7z install state via the plugin's HTTP routes.
+ * (imageRecognition / videoRecognition master switches) through the wire
+ * settings API.
  */
 
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -12,20 +12,20 @@ import { namespaceValueOf } from './settings-view.ts'
 /** Feature-switch state. */
 export type FeatureState =
   | { status: 'loading' }
-  | { status: 'ready'; multimodal: boolean; moreExtensions: boolean }
+  | { status: 'ready'; imageRecognition: boolean; videoRecognition: boolean }
 
 /** The `looklook` settings namespace value as read through the wire. */
 interface LooklookSettingsView {
-  multimodal?: boolean
-  moreExtensions?: boolean
+  imageRecognition?: boolean
+  videoRecognition?: boolean
 }
 
 /** Plugin feature controller: one store + load + update. */
 export interface FeatureController {
   store: SnapshotStore<FeatureState>
   load(): void
-  setMultimodal(next: boolean): void
-  setMoreExtensions(next: boolean): void
+  setImageRecognition(next: boolean): void
+  setVideoRecognition(next: boolean): void
 }
 
 /** Create the plugin feature controller. */
@@ -34,14 +34,14 @@ export function createFeatureController(api: IApiClient): FeatureController {
   const refresh = async (): Promise<void> => {
     const response = await api.settings.describe({})
     if (!response.result.ok) {
-      store.set({ status: 'ready', multimodal: true, moreExtensions: true })
+      store.set({ status: 'ready', imageRecognition: true, videoRecognition: true })
       return
     }
     const value = namespaceValueOf(response.result.value.namespaces, 'looklook') as LooklookSettingsView | undefined
     store.set({
       status: 'ready',
-      multimodal: value?.multimodal !== false,
-      moreExtensions: value?.moreExtensions !== false,
+      imageRecognition: value?.imageRecognition !== false,
+      videoRecognition: value?.videoRecognition !== false,
     })
   }
   const update = async (patch: Record<string, boolean>): Promise<void> => {
@@ -51,7 +51,7 @@ export function createFeatureController(api: IApiClient): FeatureController {
   return {
     store,
     load: () => { void refresh() },
-    setMultimodal: (next) => { void update({ multimodal: next }) },
-    setMoreExtensions: (next) => { void update({ moreExtensions: next }) },
+    setImageRecognition: (next) => { void update({ imageRecognition: next }) },
+    setVideoRecognition: (next) => { void update({ videoRecognition: next }) },
   }
 }

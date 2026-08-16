@@ -1,28 +1,23 @@
 /**
- * VisionSettings: the "视觉模型" settings section (`settings.section`).
+ * ModelSettings — the looklook "模型配置" section inside the plugin card:
+ * - 视觉模型: recognizes images AND video frames (video = frames → image).
+ *   Primary + fallbacks with automatic failover.
+ * - 音频模型: transcript + sound understanding in one config; the plugin
+ *   probes the model's capability at use time (no user label needed).
+ *   Plus a one-click local ASR install (faster-whisper medium).
  *
- * Rendered with the same design system as the Models settings page:
- * ui-primitives atoms (Button / Input / StateDot / icons) and --dsw-* tokens.
- * Providers list in failover order (primary first); edits are draft-local
- * until Save, which writes credentials (per-provider API key) and the
- * `vision` settings namespace in one commit.
+ * Both lists reuse {@link ProviderListEditor}; the local ASR install is a
+ * small status/trigger card wired to the host routes.
  */
 
-import { useEffect, useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import {
-  Button, StateDot,
-} from '@deepseek-ai/dsh-client-ui-primitives'
-import {
-  IconChevronDownOutline14, IconChevronUpOutline14,
-  IconEditOutline16, IconPlusOutline16, IconTrashOutline16,
-} from '@deepseek-ai/dsh-client-ui-primitives'
-import { namespaceValueOf } from './settings-view.ts'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ProviderListEditor } from './ProviderListEditor.tsx'
 
 /** Injected face supplied by the plugin apply closure. */
-export interface VisionSettingsInjected {
+export interface ModelSettingsInjected {
   /** The wire API client. */
   api: IApiClient
   /** Bound translate for the `looklook` namespace. */
@@ -31,450 +26,143 @@ export interface VisionSettingsInjected {
   listModels: (provider: { baseURL: string; apiKeyEnv: string }) => Promise<
     { ok: true; models: string[] } | { ok: false; error: string }
   >
-  /** Reactive snapshot of the `multimodal` master switch (false hides this section). */
-  useMultimodal: () => boolean
 }
 
-/** One provider under local edit. */
-export interface ProviderDraft {
-  id: string
-  name: string
-  baseURL: string
-  model: string
-  enabled: boolean
-  /** Fresh API key being entered; undefined keeps the stored credential. */
-  apiKey?: string
+/** Local ASR install status (from the host routes). */
+interface AsrStatus {
+  installed: boolean
+  phase: string
+  error?: string | null
 }
 
-/** Derive a credential reference for one provider id. */
-export function credentialRefFor(id: string): string {
-  const safe = id.toUpperCase().replace(/[^A-Z0-9]/g, '_')
-  return `LOOKLOOK_${safe}_API_KEY`
-}
-
-/** The `vision` namespace view as read through the wire. */
-interface VisionSettingsView {
-  providers?: ProviderDraft[]
-}
-
-function visionProvidersOf(namespaces: unknown): ProviderDraft[] {
-  const value = namespaceValueOf(namespaces, 'vision') as VisionSettingsView | undefined
-  return Array.isArray(value?.providers) ? value.providers : []
-}
-
-function newProviderId(): string {
-  return `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-}
-
-/**
- * Shared layout matching the settings-panel design language (the same one
- * ModelsSection uses): every color resolves through a `--dsw-alias-*` token
- * so light and dark themes both render correctly — bare `--border`/`--surface`
- * names or literal fallbacks would stay light under the dark theme.
- */
-const layout = {
-  section: { display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 720, color: 'var(--dsw-alias-label-primary)' },
-  title: { margin: 0, fontSize: 16, lineHeight: '24px', fontWeight: 500, color: 'var(--dsw-alias-label-primary)' },
-  intro: { margin: 0, fontSize: 14, lineHeight: '22px', color: 'var(--dsw-alias-label-tertiary)' },
-  hint: { margin: 0, fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' },
-  saved: { margin: 0, fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-state-success-primary)' },
-  error: { margin: 0, fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-state-warn-label)' },
-  // Outlined on the panel fill, exactly like a provider row card.
-  card: {
+const css = {
+  stack: { display: 'flex', flexDirection: 'column', gap: 28, color: 'var(--dsw-alias-label-primary)' },
+  divider: { border: 'none', borderTop: '1px solid var(--dsw-alias-border-l2)' },
+  asrCard: {
     border: '1px solid var(--dsw-alias-border-l2)',
     borderRadius: 12,
     padding: '12px 14px',
     display: 'flex',
-    flexDirection: 'column',
+    alignItems: 'center',
     gap: 12,
   },
-  rowHead: { display: 'flex', alignItems: 'center', gap: 10 },
-  rowIdentity: { display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 },
-  rowName: { fontSize: 14, lineHeight: '22px', fontWeight: 500, color: 'var(--dsw-alias-label-primary)' },
-  rowTag: {
+  asrText: { display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, flex: 1 },
+  asrTitle: { fontSize: 13, lineHeight: '20px', fontWeight: 600 },
+  asrDesc: { fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' },
+  asrBadge: {
     flex: 'none',
-    padding: '1px 6px',
-    border: '1px solid var(--dsw-alias-border-l3)',
-    borderRadius: 4,
-    fontSize: 11,
-    lineHeight: '16px',
-    color: 'var(--dsw-alias-label-secondary)',
-  },
-  rowMeta: { fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' },
-  rowActions: { display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 'auto' },
-  // Filled editing surface, matching the settings selector fill.
-  editor: {
-    borderRadius: 12,
-    background: 'var(--dsw-alias-bg-module-platform)',
-    padding: '14px 16px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 14,
-  },
-  field: { display: 'flex', flexDirection: 'column', gap: 6 },
-  fieldLabel: {
-    display: 'inline-flex', alignItems: 'center', gap: 10,
-    fontSize: 12, lineHeight: '18px', fontWeight: 500,
-    color: 'var(--dsw-alias-label-secondary)',
-  },
-  footer: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 },
-  // Text input matching ModelsSection's `.input` verbatim: explicit tokens so
-  // the fill renders identically in both themes regardless of external CSS.
-  input: {
-    boxSizing: 'border-box',
-    width: '100%',
-    height: 32,
-    padding: '0 10px',
+    padding: '2px 10px',
     border: '1px solid var(--dsw-alias-border-l2)',
-    borderRadius: 8,
-    font: 'inherit',
-    fontSize: 14,
-    lineHeight: '22px',
-    background: 'var(--dsw-alias-bg-layer-1)',
-    color: 'var(--dsw-alias-label-primary)',
+    borderRadius: 999,
+    fontSize: 12,
+    lineHeight: '18px',
   },
 } as const
 
-/** The settings section body, styled like the Models page. */
-export function VisionSettingsSection(props: VisionSettingsInjected) {
-  const { useMultimodal } = props
-  const multimodalOn = useMultimodal()
-  // Multimodal OFF: the whole vision section (including its heading) is gone.
-  if (!multimodalOn) return null
-  return <VisionSettingsBody {...props} />
-}
+/** One-click local ASR install card. */
+function LocalAsrCard({ api, t }: { api: IApiClient; t: TranslateNS<'looklook'> }) {
+  const [status, setStatus] = useState<AsrStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-/**
- * The full vision-config editor. Every state hook lives here, so the hook
- * order stays consistent for as long as the component is mounted (it only
- * mounts while multimodal is ON — the wrapper above decides).
- */
-function VisionSettingsBody(props: VisionSettingsInjected) {
-  const { api, t, listModels } = props
-  const [providers, setProviders] = useState<ProviderDraft[]>([])
-  const [loaded, setLoaded] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [notice, setNotice] = useState<{ kind: 'saved' | 'error'; text: string } | null>(null)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  // The add-mode draft lives in its own state: it is NOT part of `providers`
-  // until Save, and rebuilding it per render (as an inline object) would reset
-  // the input value on every keystroke and break IME composition.
-  const [addDraft, setAddDraft] = useState<ProviderDraft | null>(null)
-  // Per-editor model-discovery state: id → fetched model list or failure.
-  const [fetching, setFetching] = useState<string | null>(null)
-  const [fetchedModels, setFetchedModels] = useState<Record<string, string[]>>({})
-  const [fetchError, setFetchError] = useState<string | null>(null)
-  // Provider id → whether a credential is actually stored (keys never live in
-  // the settings namespace, so the editor must ask the credentials service).
-  const [keyStates, setKeyStates] = useState<Record<string, boolean>>({})
+  const refresh = async (): Promise<void> => {
+    try {
+      const response = await fetch('/api/looklook-asr-status')
+      const body = await response.json() as AsrStatus
+      setStatus(body)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
 
-  useEffect(() => {
-    void (async () => {
-      const response = await api.settings.describe({})
-      if (response.result.ok) {
-        const loaded = visionProvidersOf(response.result.value.namespaces)
-        setProviders(loaded)
-        const refs = loaded.map(provider => credentialRefFor(provider.id))
-        if (refs.length > 0) {
-          const cred = await api.credentials.describe({ refs })
-          if (cred.result.ok) {
-            const next: Record<string, boolean> = {}
-            for (const provider of loaded) {
-              next[provider.id] = cred.result.value.credentials[credentialRefFor(provider.id)]?.configured === true
-            }
-            setKeyStates(next)
+  useEffect(() => { void refresh() }, [api])
+
+  const install = async (): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    try {
+      const response = await fetch('/api/looklook-asr-install', { method: 'POST' })
+      const body = await response.json() as { ok?: boolean; error?: string }
+      if (body.ok !== true) throw new Error(body.error ?? '启动安装失败')
+      // Poll until done/failed.
+      await new Promise<void>((resolveBody) => {
+        const timer = setInterval(async () => {
+          await refresh()
+          if (status !== null && (status.phase === 'done' || status.phase === 'failed')) {
+            clearInterval(timer)
+            resolveBody()
           }
-        }
-      }
-      setLoaded(true)
-    })()
-  }, [api])
-
-  const primaryId = useMemo(() => providers.find(provider => provider.enabled)?.id, [providers])
-  const editing = editingId === null ? undefined : providers.find(provider => provider.id === editingId)
-
-  const patch = (id: string, next: Partial<ProviderDraft>): void => {
-    setProviders(current => current.map(provider => (
-      provider.id === id ? { ...provider, ...next } : provider
-    )))
-  }
-
-  const move = (id: string, offset: -1 | 1): void => {
-    setProviders(current => {
-      const index = current.findIndex(provider => provider.id === id)
-      const target = index + offset
-      if (index < 0 || target < 0 || target >= current.length) return current
-      const next = [...current]
-      const [item] = next.splice(index, 1)
-      if (item === undefined) return current
-      next.splice(target, 0, item)
-      return next
-    })
-  }
-
-  const remove = (id: string): void => {
-    setProviders(current => current.filter(provider => provider.id !== id))
-    if (editingId === id) setEditingId(null)
-  }
-
-  const closeEditor = (): void => {
-    setEditingId(null)
-    setAddDraft(null)
-    setFetchError(null)
-  }
-
-  /** Probe the provider's `/models` endpoint with its stored API key. */
-  const fetchModels = async (draft: ProviderDraft): Promise<void> => {
-    setFetchError(null)
-    setFetching(draft.id)
-    try {
-      if (typeof draft.baseURL !== 'string' || draft.baseURL.trim() === '') {
-        setFetchError(t('settings.provider.baseURLRequired'))
-        return
-      }
-      const result = await listModels({
-        baseURL: draft.baseURL,
-        apiKeyEnv: credentialRefFor(draft.id),
+        }, 1500)
       })
-      if (result.ok) {
-        setFetchedModels(current => ({ ...current, [draft.id]: result.models }))
-      } else {
-        // The union type declares error as a string, but RPC-level failures
-        // arrive as { code, message, details } objects at runtime — and React
-        // cannot render an object as a child. Always render a string.
-        const rawError: unknown = result.error
-        const message = typeof rawError === 'string'
-          ? rawError
-          : rawError !== null && typeof rawError === 'object' && 'message' in rawError
-            ? String((rawError as { message: unknown }).message)
-            : JSON.stringify(rawError)
-        setFetchError(message)
-      }
-    } catch (error) {
-      setFetchError(error instanceof Error ? error.message : String(error))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setFetching(null)
+      setBusy(false)
     }
   }
 
-  const save = async (): Promise<void> => {
-    setSaving(true)
-    setNotice(null)
-    try {
-      const nextProviders = addDraft === null ? providers : [...providers, addDraft]
-      const freshKeys = nextProviders.filter(provider => provider.apiKey !== undefined && provider.apiKey.length > 0)
-      for (const provider of freshKeys) {
-        const stored = await api.credentials.set({ ref: credentialRefFor(provider.id), value: provider.apiKey ?? '' })
-        if (!stored.result.ok) throw new Error(stored.result.error.message)
-      }
-      const update = await api.settings.update({
-        ns: 'vision',
-        patch: {
-          providers: nextProviders.map(({ id, name, baseURL, model, enabled }) => ({
-            id, name, baseURL, model, enabled,
-            apiKeyEnv: credentialRefFor(id),
-          })),
-        },
-      })
-      if (!update.result.ok) throw new Error(update.result.error.message)
-      // Commit to the local list immediately so the saved provider shows up
-      // without a page reload; record which keys are now stored.
-      setProviders(nextProviders.map(provider => ({
-        id: provider.id,
-        name: provider.name,
-        baseURL: provider.baseURL,
-        model: provider.model,
-        enabled: provider.enabled,
-      })))
-      if (freshKeys.length > 0) {
-        setKeyStates(current => {
-          const next = { ...current }
-          for (const provider of freshKeys) next[provider.id] = true
-          return next
-        })
-      }
-      setNotice({ kind: 'saved', text: t('settings.saved') })
-      closeEditor()
-    } catch (error) {
-      setNotice({
-        kind: 'error',
-        text: `${t('settings.saveFailed')}：${error instanceof Error ? error.message : String(error)}`,
-      })
-    } finally {
-      setSaving(false)
+  const phaseLabel = (phase: string): string => {
+    switch (phase) {
+      case 'checking': return '环境检查中…'
+      case 'installing-deps': return '安装依赖中…'
+      case 'downloading-model': return '下载模型中…（约 1.5GB，视网速而定）'
+      case 'writing': return '写入本地服务…'
+      case 'done': return '已就绪'
+      case 'failed': return '安装失败'
+      default: return '未安装'
     }
   }
 
-  /**
-   * One editor card (add or edit): the same filled editor surface as a
-   * provider editor. `draft` and `onPatch` come from the caller so the draft
-   * stays stable across renders (add mode keeps its own state; edit mode
-   * patches the providers array).
-   */
-  const renderEditor = (
-    draft: ProviderDraft,
-    onPatch: (next: Partial<ProviderDraft>) => void,
-    _isNew: boolean,
-  ): ReactNode => (
-    <div style={layout.editor}>
-      <div style={layout.field}>
-        <label style={layout.fieldLabel}>{t('settings.provider.name')}</label>
-        <input
-          style={layout.input}
-          value={draft.name} placeholder={t('settings.provider.nameHint')}
-          onChange={event => onPatch({ name: event.target.value })}
-        />
-      </div>
-      <div style={layout.field}>
-        <label style={layout.fieldLabel}>{t('settings.provider.baseURL')}</label>
-        <input
-          style={layout.input}
-          value={draft.baseURL} placeholder={t('settings.provider.baseURLHint')}
-          onChange={event => onPatch({ baseURL: event.target.value })}
-        />
-      </div>
-      <div style={layout.field}>
-        <label style={layout.fieldLabel}>{t('settings.provider.model')}</label>
-        <input
-          style={layout.input}
-          list={`looklook-models-${draft.id}`}
-          value={draft.model} placeholder={t('settings.provider.modelHint')}
-          onChange={event => onPatch({ model: event.target.value })}
-        />
-        <datalist id={`looklook-models-${draft.id}`}>
-          {(fetchedModels[draft.id] ?? []).map(model => (
-            <option key={model} value={model} />
-          ))}
-        </datalist>
-        {(fetchedModels[draft.id] ?? []).length > 0 && (
-          <span style={layout.hint}>{t('settings.provider.modelsFetched')}</span>
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Button
-            variant="outline" size="sm"
-            disabled={fetching === draft.id}
-            onClick={() => void fetchModels(draft)}
-          >
-            {fetching === draft.id ? '…' : t('settings.provider.fetchModels')}
-          </Button>
-          {fetchError !== null && <span style={layout.error}>{fetchError}</span>}
-        </div>
-      </div>
-      <div style={layout.field}>
-        <label style={layout.fieldLabel}>{t('settings.provider.apiKey')}</label>
-        <input
-          style={layout.input}
-          type="password" autoComplete="off"
-          value={draft.apiKey ?? ''}
-          placeholder={keyStates[draft.id] ? t('settings.provider.apiKeyConfigured') : t('settings.provider.apiKeyUnset')}
-          onChange={event => onPatch({ apiKey: event.target.value })}
-        />
-      </div>
-      <div style={layout.field}>
-        <label style={{ ...layout.fieldLabel, cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={draft.enabled}
-            onChange={event => onPatch({ enabled: event.target.checked })}
-          />
-          {t('settings.provider.enabled')}
-        </label>
-      </div>
-    </div>
-  )
+  const installed = status?.installed === true || status?.phase === 'done'
 
   return (
-    <div style={layout.section}>
-      <h2 style={layout.title}>{t('settings.nav')}</h2>
-      <p style={layout.intro}>{t('settings.intro')}</p>
-      <p style={layout.hint}>{t('settings.failoverHint')}</p>
-
-      {loaded && providers.length === 0 && (
-        <p style={layout.hint}>{t('settings.provider.empty')}</p>
-      )}
-
-      {providers.map(provider => (
-        <div
-          key={provider.id}
-          style={{ ...layout.card, cursor: 'pointer' }}
-          role="button"
-          tabIndex={0}
-          onClick={() => setEditingId(provider.id)}
-          onKeyDown={event => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault()
-              setEditingId(provider.id)
-            }
-          }}
-        >
-          <div style={layout.rowHead}>
-            <span style={layout.rowIdentity}>
-              <span style={layout.rowName}>{provider.name || provider.id}</span>
-              {provider.id === primaryId
-                ? <span style={layout.rowTag}>{t('settings.provider.primary')}</span>
-                : <span style={layout.rowTag}>{t('settings.provider.fallback')}</span>}
-            </span>
-            <span style={{ ...layout.rowActions, cursor: 'default' }} onClick={event => event.stopPropagation()}>
-              <StateDot state={keyStates[provider.id] ? 'done' : 'warning'} />
-              <Button
-                variant="ghost" size="sm" aria-label={t('settings.provider.moveUp')}
-                disabled={provider.id === providers[0]?.id}
-                onClick={() => move(provider.id, -1)}
-              >
-                <IconChevronUpOutline14 />
-              </Button>
-              <Button
-                variant="ghost" size="sm" aria-label={t('settings.provider.moveDown')}
-                disabled={provider.id === providers[providers.length - 1]?.id}
-                onClick={() => move(provider.id, 1)}
-              >
-                <IconChevronDownOutline14 />
-              </Button>
-              <Button
-                variant="ghost" size="sm" aria-label={t('settings.provider.name')}
-                onClick={() => setEditingId(provider.id)}
-              >
-                <IconEditOutline16 />
-              </Button>
-              <Button
-                variant="ghost" size="sm" aria-label={t('settings.provider.remove')}
-                onClick={() => remove(provider.id)}
-              >
-                <IconTrashOutline16 />
-              </Button>
-            </span>
-          </div>
-          <span style={layout.rowMeta}>{provider.baseURL} · {provider.model}</span>
-          {editingId === provider.id && editing !== undefined
-            && renderEditor(editing, next => patch(editing.id, next), false)}
-        </div>
-      ))}
-
-      {addDraft !== null
-        && renderEditor(addDraft, next => setAddDraft(current => ({ ...current, ...next } as ProviderDraft)), true)}
-
-      <div style={layout.footer}>
-        {addDraft === null && editingId === null ? (
-          <Button
-            variant="ghost" icon={<IconPlusOutline16 />}
-            onClick={() => setAddDraft({ id: newProviderId(), name: '', baseURL: '', model: '', enabled: true })}
-          >
-            {t('settings.provider.add')}
-          </Button>
-        ) : (
-          <>
-            <Button variant="primary" disabled={saving} onClick={() => void save()}>
-              {t('settings.save')}
-            </Button>
-            <Button variant="ghost" disabled={saving} onClick={() => closeEditor()}>
-              {t('settings.cancel')}
-            </Button>
-          </>
-        )}
-        {notice !== null && (
-          <span style={notice.kind === 'saved' ? layout.saved : layout.error}>{notice.text}</span>
-        )}
+    <div style={css.asrCard}>
+      <div style={css.asrText}>
+        <span style={css.asrTitle}>{t('asr.local.title')}</span>
+        <span style={css.asrDesc}>
+          {status === null
+            ? t('asr.local.checking')
+            : installed
+              ? t('asr.local.ready')
+              : phaseLabel(status.phase)}
+        </span>
+        {error !== null && <span style={css.asrDesc}>{error}</span>}
+        {status?.error !== undefined && status.error !== null && status.error !== ''
+          && <span style={css.asrDesc}>{status.error}</span>}
       </div>
+      {!installed && (
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => void install()}>
+          {busy ? '…' : t('asr.local.install')}
+        </Button>
+      )}
+      {installed && <span style={css.asrBadge}>{t('asr.local.readyBadge')}</span>}
+    </div>
+  )
+}
+
+/** The model-configuration body (visual + audio sections). */
+export function ModelSettingsSection(props: ModelSettingsInjected) {
+  const { api, t, listModels } = props
+  return (
+    <div style={css.stack}>
+      <ProviderListEditor
+        api={api}
+        t={t}
+        ns="vision"
+        title={t('settings.vision.title')}
+        intro={t('settings.vision.intro')}
+        listModels={listModels}
+      />
+      <div style={css.divider} />
+      <ProviderListEditor
+        api={api}
+        t={t}
+        ns="looklook-audio"
+        title={t('settings.audio.title')}
+        intro={t('settings.audio.intro')}
+      />
+      <LocalAsrCard api={api} t={t} />
     </div>
   )
 }

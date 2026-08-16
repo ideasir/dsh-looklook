@@ -151,21 +151,18 @@ export function apply(ctx: ClientContext): void {
     return controller
   }
 
-  // Feature master switches (multimodal / zip).
+  // Feature master switches (image / video recognition).
   const features: FeatureController = createFeatureController(connection.api)
   features.load()
   const useFeaturesSnapshot = bindSnapshotSelector(features.store)
-  const useMultimodal = (): boolean => useFeaturesSnapshot(
-    (s: { status: string; multimodal?: boolean }) => s.status === 'ready' && s.multimodal !== false,
+  /** Whether the plugin's image recognition is ON (gates the eye toggle and
+   * the vision section in the settings card). */
+  const useImageRecognition = (): boolean => useFeaturesSnapshot(
+    (s: { status: string; imageRecognition?: boolean }) => s.status === 'ready' && s.imageRecognition !== false,
   ) as boolean
   const useFeatures = (): import('./feature-controller.ts').FeatureState => useFeaturesSnapshot(
     (s: import('./feature-controller.ts').FeatureState) => s,
   ) as import('./feature-controller.ts').FeatureState
-  /** Current policy for the drop handler (reads the live store, not reactive). */
-  const policyAt = (): 'base' | 'extended' => {
-    const state = features.store.getSnapshot()
-    return state.status === 'ready' && state.moreExtensions !== false ? 'extended' : 'base'
-  }
 
   // Pushed invalidations refresh loaded controllers without polling.
   ctx.effect(() => {
@@ -265,7 +262,7 @@ export function apply(ctx: ClientContext): void {
     name: 'settings.plugin.item',
     id: PLUGIN_CARD_ID,
     order: 30,
-    inject: (): LooklookCardInjected => ({ api: connection.api, t, features, useFeatures, listModels, useMultimodal }),
+    inject: (): LooklookCardInjected => ({ api: connection.api, t, features, useFeatures, listModels, useImageRecognition }),
   }, LooklookPluginCard))
 
   // Drag-and-drop of archive/video files onto the page: intercept in the
@@ -282,15 +279,9 @@ export function apply(ctx: ClientContext): void {
     const onDropCapture = (event: DragEvent): void => {
       const files = [...(event.dataTransfer?.files ?? [])]
       if (files.length === 0) return
-      // Intercept only when EVERY dropped file is allowed by the current
-      // extension policy; otherwise the built-in handler deals with the drop
-      // (images stay native).
-      const policy = policyAt()
-      const allowed = (name: string): boolean => {
-        if (policy === 'base') return name.toLowerCase().endsWith('.zip')
-        return isUploadableName(name)
-      }
-      if (!files.every(file => allowed(file.name))) return
+      // Intercept only when EVERY dropped file is non-image (images ride the
+      // native DSH pipeline); mixed drops pass through untouched.
+      if (!files.every(file => isUploadableName(file.name))) return
       const sessionId = sessions.currentProvideInfo.getSnapshot()?.sessionId
       if (sessionId === undefined || sessionId === '') return
       event.preventDefault()
@@ -346,7 +337,7 @@ export function apply(ctx: ClientContext): void {
         controller,
         useSnapshot: bindSnapshotSelector(controller.store),
         t,
-        useMultimodal,
+        useImageRecognition,
       }
     },
   }, VisionToggle))

@@ -4,19 +4,24 @@
  * URL (Bilibili / YouTube / Douyin / generic via the vendored Python worker).
  *
  * Pipeline (all text flows to the text-only main model):
- *   1. vendor worker.py extracts metadata + transcript (platform subtitles
- *      first, else local faster-whisper ASR) + evenly spaced frames.
- *   2. When L3 audio understanding is configured (audioUnderstanding switch
- *      AND an audio-capable provider), a sample of the audio track is sent
- *      to the audio model for tone/music/pace; otherwise route A (transcript
- *      only) applies and the L3 block is omitted.
- *   3. Frames are staged on disk; their paths are returned so the main model
- *      can ask for a closer look (or the vision model can be extended later).
+ *   1. vendor worker.py extracts metadata + transcript (platform/embedded
+ *      subtitles first; else it prepares an audio file) + frames.
+ *   2. Audio understanding (L2+L3 merged, capability-probed, no user label):
+ *      - if an audio API provider is configured, try the HIGH route first
+ *        (chat/completions + input_audio → transcript + tone + music + pace
+ *        in one call); on a format rejection fall back to the LOW route
+ *        (/v1/audio/transcriptions → transcript only). The probed capability
+ *        is remembered per provider to avoid repeating the failed attempt.
+ *      - else, if the local ASR install exists, use it (transcript only).
+ *      - else, no audio understanding (subtitles only).
+ *   3. Frames are described by the vision model (each frame, structured
+ *      prompt) and returned as a "画面时间线" so the main model sees what
+ *      happened visually instead of bare image paths.
  *
- * All external calls are subprocesses of the vendored worker; missing Python
- * deps surface as a classified message instead of a crash.
+ * All external calls are subprocesses of the vendored worker or direct HTTP;
+ * missing dependencies surface as classified messages instead of a crash.
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { AudioScope } from './settings.ts';
+import type { AudioScope, VisionScope } from './settings.ts';
 /** Register the looklook_watch tool. */
-export declare function registerWatchTool(ctx: Context, audioScope: AudioScope): void;
+export declare function registerWatchTool(ctx: Context, audioScope: AudioScope, visionScope: VisionScope, videoRecognitionEnabled: () => boolean): void;

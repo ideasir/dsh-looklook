@@ -2,15 +2,15 @@
  * dsh-looklook/upload — host-side upload support.
  *
  * POST /api/looklook-upload — save one uploaded file into the session's
- * workspace `.uploads/` directory (500 MB cap, extension whitelist:
- * archives + video). Returns the absolute path so the client can tell the
- * model where the file landed.
+ * workspace `.uploads/` directory (500 MB cap). Returns the absolute path so
+ * the client can tell the model where the file landed.
+ *
+ * The channel accepts ANY extension — installing the plugin unlocks every
+ * file type for upload (images still ride the native DSH pipeline; the
+ * client filters which drops reach this route).
  *
  * A standard webServer route (registered like any other `/api` route), so
  * no DSH source is modified.
- *
- * The extension lists below are the AUTHORITATIVE whitelist; the client's
- * `upload-shared.ts` mirror must stay in sync (verified by tests).
  */
 
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -18,16 +18,14 @@ import { basename, extname, join, resolve } from 'node:path'
 import { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import type { LooklookScope } from './settings.ts'
-import { looklookFeatures } from './settings.ts'
 
 /** Upload cap: 500 MB for every file type. */
 export const MAX_UPLOAD_BYTES = 500 * 1024 * 1024
 
-/** Archive extensions accepted by the upload channel. */
+/** Archive extensions (used for classification/hints, not a whitelist). */
 export const ARCHIVE_EXTENSIONS = ['.zip', '.7z'] as const
 
-/** Video extensions accepted by the upload channel. */
+/** Video extensions (used for classification/hints, not a whitelist). */
 export const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v'] as const
 
 /** Every extension the upload channel can accept (archives + video). */
@@ -71,26 +69,14 @@ function safeFileName(name: string): string {
   return base
 }
 
-/** Whether the extension is on the archive whitelist. */
+/** Whether the extension is an archive (classification only). */
 export function isArchiveName(name: string): boolean {
   return (ARCHIVE_EXTENSIONS as readonly string[]).includes(extname(name).toLowerCase())
 }
 
-/** Whether the extension is on the video whitelist. */
+/** Whether the extension is a video (classification only). */
 export function isVideoName(name: string): boolean {
   return (VIDEO_EXTENSIONS as readonly string[]).includes(extname(name).toLowerCase())
-}
-
-/** The base extension set (always allowed): .zip only. */
-const BASE_EXTENSIONS = ['.zip'] as const
-
-/** Whether the name passes the extension whitelist for the given policy. */
-export function isAllowedUploadName(name: string, moreExtensions: boolean): boolean {
-  const ext = extname(name).toLowerCase()
-  if (moreExtensions) {
-    return isArchiveName(name) || isVideoName(name)
-  }
-  return (BASE_EXTENSIONS as readonly string[]).includes(ext)
 }
 
 // ── Route registration ──
@@ -103,10 +89,10 @@ export interface UploadRequest {
 }
 
 /**
- * Register the upload + 7z routes on the webServer service.
+ * Register the upload route on the webServer service.
  * @param ctx - host context (injects webServer + sessions).
  */
-export function registerUploadRoutes(ctx: Context, features: LooklookScope): void {
+export function registerUploadRoutes(ctx: Context): void {
   const webServer = ctx.get('webServer') as {
     register(route: { kind: 'exact' | 'prefix'; path: string; handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void> }): () => void
   }
@@ -125,11 +111,8 @@ export function registerUploadRoutes(ctx: Context, features: LooklookScope): voi
         if (sessionId === '') throw new Error('missing sessionId')
         if (data === '') throw new Error('missing file data')
 
-        // Extension whitelist, governed by the `moreExtensions` switch:
-        // off = .zip only; on = archives (.zip/.7z) + video.
-        if (!isAllowedUploadName(name, looklookFeatures(features).moreExtensions)) {
-          throw new Error(`unsupported file type "${extname(name)}"; enable "支持更多扩展名" for .7z/video uploads`)
-        }
+        // Every extension is accepted (installing the plugin unlocks all
+        // uploads; images ride the native DSH pipeline instead).
 
         // Decode and enforce the 500 MB cap on the decoded bytes.
         const bytes = Buffer.from(data, 'base64')

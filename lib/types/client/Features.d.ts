@@ -13,10 +13,10 @@ export interface FeaturesInjected {
     api: IApiClient;
     /** Bound translate for the `looklook` namespace. */
     t: TranslateNS<'looklook'>;
-    /** Feature controller (multimodal / moreExtensions toggles). */
+    /** Feature controller (image / video recognition toggles). */
     features: FeatureController;
     /** Reactive snapshot of the feature switches. */
     useFeatures: () => FeatureState;
 }
-/** The master-switch + install-support body. */
+/** The master-switch body. */
 export declare function LooklookFeaturesSection(props: FeaturesInjected): import("react").JSX.Element;

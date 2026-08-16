@@ -29,6 +29,7 @@ import { registerDescribeTool } from './describe-tool.ts'
 import { registerZipTool } from './zip-tool.ts'
 import { registerWatchTool } from './video-tool.ts'
 import { registerUploadRoutes } from './upload.ts'
+import { registerAsrInstallRoutes } from './asr-install.ts'
 import { LooklookRemoteService } from './remote.ts'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from './types.ts'
@@ -53,7 +54,7 @@ function requestHasImage(options: GenerateOptions): boolean {
   return options.messages.some(message => contentHasImage(message.content))
 }
 
-/** One admission decision for both gateways: allow only while multimodal is ON. */
+/** One admission decision for both gateways: allow only while image recognition is ON. */
 function admissionDecision(multimodalOn: boolean): 'allow' | undefined {
   return multimodalOn ? 'allow' : undefined
 }
@@ -61,17 +62,18 @@ function admissionDecision(multimodalOn: boolean): 'allow' | undefined {
 /**
  * Plugin body: register the feature toggles + vision settings namespaces,
  * answer the image admission decision point, rewrite model requests at the
- * `agent/request-messages` waterfall (when multimodal is ON), register the
+ * `agent/request-messages` waterfall (when image recognition is ON), register the
  * process_zip tool (gated by the zip toggle) and the upload/7z routes.
  */
 export function apply(ctx: Context, config: VisionSettings): void {
   // Feature master switches (settings page → plugin area).
   const features: LooklookScope = ctx.settings.register(settingsNamespace('looklook'), LooklookConfig, { base: undefined })
   const scope: VisionScope = ctx.settings.register(settingsNamespace('vision'), Config, { base: config })
-  // L3 audio understanding: optional, OFF by default (route A transcript only).
+  // Audio model (L2+L3 merged): API providers; local ASR install state on disk.
   const audioScope: AudioScope = ctx.settings.register(settingsNamespace('looklook-audio'), AudioConfig, { base: undefined })
 
-  const multimodalEnabled = (): boolean => looklookFeatures(features).multimodal
+  const imageRecognitionEnabled = (): boolean => looklookFeatures(features).imageRecognition
+  const videoRecognitionEnabled = (): boolean => looklookFeatures(features).videoRecognition
 
   // Host receiver for the client's model-discovery RPC (settings page).
   ctx.plugin(LooklookRemoteService)
@@ -81,7 +83,7 @@ export function apply(ctx: Context, config: VisionSettings): void {
   const refRegistry = new Map<string, ImageAttachmentRef>()
 
   // The "eyes" of the pseudo-native multimodal model (runtime-gated on the
-  // multimodal toggle, so switching it in settings applies without restart).
+  // image recognition toggle, so switching it in settings applies without restart).
   registerDescribeTool(ctx, scope, refRegistry, features)
 
   // Tell the main model how to see images and how uploads land.
@@ -98,20 +100,20 @@ export function apply(ctx: Context, config: VisionSettings): void {
 
   // rc.6 admission override: the api-proxy's hardcoded text-only refusal
   // consults this optional service (patched into dsh-host-apiproxy). Only
-  // answer "allow" while the multimodal feature is ON.
+  // answer "allow" while the image recognition feature is ON.
   ctx.provide('imageAdmission', {
-    decide: () => admissionDecision(multimodalEnabled()),
+    decide: () => admissionDecision(imageRecognitionEnabled()),
   })
 
   // The gateway asks before admitting an image while the selected model is
-  // text-only. Answer "allow" only while multimodal is ON; otherwise return
+  // text-only. Answer "allow" only while image recognition is ON; otherwise return
   // undefined so DSH falls back to native behavior.
-  ctx.on('prompt/image-admission', () => admissionDecision(multimodalEnabled()))
+  ctx.on('prompt/image-admission', () => admissionDecision(imageRecognitionEnabled()))
 
   // rc.6 request rewriting: `agent/pre-step` and `agent/request-messages`.
-  // When multimodal is OFF the plugin does nothing to images (native).
+  // When image recognition is OFF the plugin does nothing to images (native).
   ctx.on('agent/pre-step', async ({ agent, messages, signal }, next) => {
-    if (!multimodalEnabled()) return next()
+    if (!imageRecognitionEnabled()) return next()
     if (!messages.some(message => contentHasImage(message.content))) return next()
     const decision = await next()
     if (decision.kind !== 'enter') return decision
@@ -132,7 +134,7 @@ export function apply(ctx: Context, config: VisionSettings): void {
   })
 
   ctx.on('agent/request-messages', async (_payload, request, next) => {
-    if (!multimodalEnabled()) return next()
+    if (!imageRecognitionEnabled()) return next()
     if (!requestHasImage(request)) return next()
 
     const eye = eyeStateFor(scope, request.sessionId)
@@ -152,10 +154,14 @@ export function apply(ctx: Context, config: VisionSettings): void {
   // ZIP processing tool (vendored from dsh-zip), always available.
   registerZipTool(ctx)
 
-  // Video understanding: looklook_watch (local file or URL; vendored worker).
-  registerWatchTool(ctx, audioScope)
+  // Video understanding: looklook_watch (local file or URL; vendored worker),
+  // gated by the video-recognition switch.
+  registerWatchTool(ctx, audioScope, scope, videoRecognitionEnabled)
 
-  // Upload channel (archives + video, extension whitelist graded by the
-  // moreExtensions switch).
-  registerUploadRoutes(ctx, features)
+  // Upload channel: any file type (no whitelist — installing the plugin
+  // unlocks every upload).
+  registerUploadRoutes(ctx)
+
+  // Local ASR one-click install (status + trigger routes).
+  registerAsrInstallRoutes(ctx)
 }

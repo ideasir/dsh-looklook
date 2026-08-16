@@ -15,7 +15,7 @@ export interface FeaturesInjected {
   api: IApiClient
   /** Bound translate for the `looklook` namespace. */
   t: TranslateNS<'looklook'>
-  /** Feature controller (multimodal / moreExtensions toggles). */
+  /** Feature controller (image / video recognition toggles). */
   features: FeatureController
   /** Reactive snapshot of the feature switches. */
   useFeatures: () => FeatureState
@@ -35,7 +35,7 @@ const css = {
   rowText: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 },
   rowName: { fontSize: 14, lineHeight: '22px', fontWeight: 500, color: 'var(--dsw-alias-label-primary)' },
   rowDesc: { fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' },
-  installRow: { display: 'flex', alignItems: 'center', gap: 10 },
+  hint: { fontSize: 11, lineHeight: '17px', color: 'var(--dsw-alias-label-tertiary)' },
 } as const
 
 /** Slider-style switch (track + knob), smooth spring motion, perfectly centered knob. */
@@ -105,7 +105,7 @@ function SwitchRow({ label, desc, checked, onChange }: {
   )
 }
 
-/** The master-switch + install-support body. */
+/** The master-switch body. */
 export function LooklookFeaturesSection(props: FeaturesInjected) {
   const { t, features, useFeatures } = props
   const state = useFeatures()
@@ -116,17 +116,18 @@ export function LooklookFeaturesSection(props: FeaturesInjected) {
       <div style={css.section}>
         <span style={css.heading}>{t('features.switches.heading')}</span>
         <SwitchRow
-          label={t('features.extensions.label')}
-          desc={t('features.extensions.desc')}
-          checked={ready && state.moreExtensions}
-          onChange={next => features.setMoreExtensions(next)}
+          label={t('features.image.label')}
+          desc={t('features.image.desc')}
+          checked={ready && state.imageRecognition}
+          onChange={next => features.setImageRecognition(next)}
         />
         <SwitchRow
-          label={t('features.multimodal.label')}
-          desc={t('features.multimodal.desc')}
-          checked={ready && state.multimodal}
-          onChange={next => features.setMultimodal(next)}
+          label={t('features.video.label')}
+          desc={t('features.video.desc')}
+          checked={ready && state.videoRecognition}
+          onChange={next => features.setVideoRecognition(next)}
         />
+        <span style={css.hint}>{t('features.uploadHint')}</span>
       </div>
     </div>
   )

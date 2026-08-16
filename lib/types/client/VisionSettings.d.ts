@@ -1,16 +1,18 @@
 /**
- * VisionSettings: the "视觉模型" settings section (`settings.section`).
+ * ModelSettings — the looklook "模型配置" section inside the plugin card:
+ * - 视觉模型: recognizes images AND video frames (video = frames → image).
+ *   Primary + fallbacks with automatic failover.
+ * - 音频模型: transcript + sound understanding in one config; the plugin
+ *   probes the model's capability at use time (no user label needed).
+ *   Plus a one-click local ASR install (faster-whisper medium).
  *
- * Rendered with the same design system as the Models settings page:
- * ui-primitives atoms (Button / Input / StateDot / icons) and --dsw-* tokens.
- * Providers list in failover order (primary first); edits are draft-local
- * until Save, which writes credentials (per-provider API key) and the
- * `vision` settings namespace in one commit.
+ * Both lists reuse {@link ProviderListEditor}; the local ASR install is a
+ * small status/trigger card wired to the host routes.
  */
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client';
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots';
 /** Injected face supplied by the plugin apply closure. */
-export interface VisionSettingsInjected {
+export interface ModelSettingsInjected {
     /** The wire API client. */
     api: IApiClient;
     /** Bound translate for the `looklook` namespace. */
@@ -26,20 +28,6 @@ export interface VisionSettingsInjected {
         ok: false;
         error: string;
     }>;
-    /** Reactive snapshot of the `multimodal` master switch (false hides this section). */
-    useMultimodal: () => boolean;
 }
-/** One provider under local edit. */
-export interface ProviderDraft {
-    id: string;
-    name: string;
-    baseURL: string;
-    model: string;
-    enabled: boolean;
-    /** Fresh API key being entered; undefined keeps the stored credential. */
-    apiKey?: string;
-}
-/** Derive a credential reference for one provider id. */
-export declare function credentialRefFor(id: string): string;
-/** The settings section body, styled like the Models page. */
-export declare function VisionSettingsSection(props: VisionSettingsInjected): import("react").JSX.Element | null;
+/** The model-configuration body (visual + audio sections). */
+export declare function ModelSettingsSection(props: ModelSettingsInjected): import("react").JSX.Element;

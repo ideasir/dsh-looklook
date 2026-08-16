@@ -33,7 +33,7 @@ export declare const inject: string[];
 /**
  * Plugin body: register the feature toggles + vision settings namespaces,
  * answer the image admission decision point, rewrite model requests at the
- * `agent/request-messages` waterfall (when multimodal is ON), register the
+ * `agent/request-messages` waterfall (when image recognition is ON), register the
  * process_zip tool (gated by the zip toggle) and the upload/7z routes.
  */
 export declare function apply(ctx: Context, config: VisionSettings): void;

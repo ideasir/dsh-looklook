@@ -1,17 +1,15 @@
 /**
- * Shared upload logic for dsh-looklook: upload one or more archive/video
- * files through the plugin's `/api/looklook-upload` route (saved into the
- * session workspace `.uploads/`) and return their paths. The caller stages
- * the notes into the input draft — nothing is sent until the user presses
- * Enter.
+ * Shared upload logic for dsh-looklook: upload any non-image file through the
+ * plugin's `/api/looklook-upload` route (saved into the session workspace
+ * `.uploads/`) and return its path. The caller stages the note into the
+ * input draft — nothing is sent until the user presses Enter.
  *
- * NOTE: this client-side extension list is a MIRROR of the authoritative
- * host whitelist in `src/upload.ts` (ARCHIVE_EXTENSIONS + VIDEO_EXTENSIONS).
- * Keep them in sync; the verify scripts assert equality.
+ * The channel accepts EVERY extension (installing the plugin unlocks all
+ * uploads); only browser-native image types are left to the DSH image
+ * pipeline. This file mirrors the host route's no-whitelist policy.
  */
-/** Accepted extensions (archives + video), mirroring `src/upload.ts`. */
-export declare const ACCEPT_EXTENSIONS: string[];
-/** Whether a file name is uploadable through the looklook channel. */
+/** Whether a file name should be intercepted by the looklook upload channel
+ * (i.e. it is NOT a native image). */
 export declare function isUploadableName(name: string): boolean;
 /**
  * Convert a File to a base64 data string asynchronously via FileReader, so a

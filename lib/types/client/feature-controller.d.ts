@@ -1,7 +1,7 @@
 /**
  * Plugin feature controller: reads the `looklook` settings namespace
- * (multimodal / zip master switches) through the wire settings API and
- * reports the 7z install state via the plugin's HTTP routes.
+ * (imageRecognition / videoRecognition master switches) through the wire
+ * settings API.
  */
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client';
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client';
@@ -10,15 +10,15 @@ export type FeatureState = {
     status: 'loading';
 } | {
     status: 'ready';
-    multimodal: boolean;
-    moreExtensions: boolean;
+    imageRecognition: boolean;
+    videoRecognition: boolean;
 };
 /** Plugin feature controller: one store + load + update. */
 export interface FeatureController {
     store: SnapshotStore<FeatureState>;
     load(): void;
-    setMultimodal(next: boolean): void;
-    setMoreExtensions(next: boolean): void;
+    setImageRecognition(next: boolean): void;
+    setVideoRecognition(next: boolean): void;
 }
 /** Create the plugin feature controller. */
 export declare function createFeatureController(api: IApiClient): FeatureController;
