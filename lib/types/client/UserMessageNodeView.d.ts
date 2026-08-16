@@ -22,6 +22,8 @@ interface UserMessageNodeProps {
 /**
  * Defensive user-message renderer: fixed-size thumbnails + native lightbox,
  * only the user's own text shown; falls back to plain text on unexpected shapes.
+ * The fallback ALWAYS strips looklook markers (hidden ranges + file/image
+ * markers) so raw marker code never flashes before the structured render.
  */
 export declare function LooklookUserMessageNodeView(props: UserMessageNodeProps): import("react").JSX.Element | null;
 export {};

@@ -16,6 +16,7 @@ import { ImageLightbox } from '@deepseek-ai/dsh-client-ui-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ImageLoader, ImageLightboxLabels } from '@deepseek-ai/dsh-client-ui-attachment'
 import { formatSize } from './format.ts'
+import { FileTypeIcon } from './FileTypeIcon.tsx'
 
 /** The host's attachment marker: 「【附图:<ref-json-or-id>】」. */
 const IMAGE_MARKER_RE = /【附图:([^】]+)】/g
@@ -34,7 +35,7 @@ interface FileMeta {
   size: number
 }
 
-/** A rendered attachment card: icon + name + size. */
+/** A rendered attachment card: type icon + name + size. */
 function FileCard({ file }: { file: FileMeta }) {
   return (
     <span
@@ -51,10 +52,9 @@ function FileCard({ file }: { file: FileMeta }) {
         color: 'var(--dsw-alias-label-primary)',
       }}
     >
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M12 3l6 6h-4v8h-4v-8H6l6-6z" fill="currentColor" />
-        <path d="M4 19h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      </svg>
+      <span style={{ display: 'grid', placeItems: 'center', flex: 'none', color: 'var(--dsw-alias-brand-primary)' }}>
+        <FileTypeIcon name={file.name} />
+      </span>
       <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}>{file.name}</span>
         <span style={{ fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' }}>{formatSize(file.size)}</span>
@@ -197,14 +197,21 @@ interface UserMessageNodeProps {
 /**
  * Defensive user-message renderer: fixed-size thumbnails + native lightbox,
  * only the user's own text shown; falls back to plain text on unexpected shapes.
+ * The fallback ALWAYS strips looklook markers (hidden ranges + file/image
+ * markers) so raw marker code never flashes before the structured render.
  */
 export function LooklookUserMessageNodeView(props: UserMessageNodeProps) {
   const content = props.node?.data?.content
   if (!Array.isArray(content)) {
     const fallback = (content as { text?: unknown } | null | undefined)?.text
-    return typeof fallback === 'string'
-      ? <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{fallback}</div>
-      : null
+    if (typeof fallback !== 'string') return null
+    const cleaned = fallback
+      .replace(FILE_MARKER_RE, '')
+      .replace(IMAGE_MARKER_RE, '')
+    const stripped = stripHidden(cleaned).trim()
+    return stripped.length === 0
+      ? null
+      : <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{stripped}</div>
   }
   const texts: string[] = []
   const attachments: ImageAttachmentRef[] = []

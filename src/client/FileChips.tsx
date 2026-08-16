@@ -9,6 +9,7 @@
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PendingFilesController, PendingFilesState } from './pending-files.ts'
 import { formatSize } from './format.ts'
+import { FileTypeIcon } from './FileTypeIcon.tsx'
 
 /** Injected face supplied by the plugin apply closure. */
 export interface FileChipsInjected {
@@ -73,10 +74,9 @@ export function FileChips(props: FileChipsInjected) {
             color: 'var(--dsw-alias-label-primary)',
           }}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 3l6 6h-4v8h-4v-8H6l6-6z" fill="currentColor" />
-            <path d="M4 19h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          </svg>
+          <span style={{ display: 'grid', placeItems: 'center', flex: 'none', color: 'var(--dsw-alias-brand-primary)' }}>
+            <FileTypeIcon name={file.name} size={16} />
+          </span>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {file.name} <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{formatSize(file.size)}</span>
           </span>
