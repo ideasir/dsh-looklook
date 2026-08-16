@@ -19,6 +19,7 @@
   },
   "files": [
     "lib",
+    "scripts",
     "cordis.patch.yml"
   ],
   "dsh": {

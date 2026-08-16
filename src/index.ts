@@ -23,10 +23,11 @@ import { contentHasImage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type { SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session/types'
-import { Config, LooklookConfig, looklookFeatures, eyeStateFor, type VisionSettings, type VisionScope, type LooklookScope } from './settings.ts'
+import { Config, LooklookConfig, AudioConfig, looklookFeatures, eyeStateFor, type VisionSettings, type VisionScope, type LooklookScope, type AudioScope } from './settings.ts'
 import { replaceImagesWithPlaceholder, rewriteImagesToToolReferences } from './translate.ts'
 import { registerDescribeTool } from './describe-tool.ts'
 import { registerZipTool } from './zip-tool.ts'
+import { registerWatchTool } from './video-tool.ts'
 import { registerUploadRoutes } from './upload.ts'
 import { LooklookRemoteService } from './remote.ts'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -34,7 +35,8 @@ import type {} from './types.ts'
 
 export { Config } from './settings.ts'
 export { LooklookConfig } from './settings.ts'
-export type { VisionProviderConfig, VisionSettings, VisionScope, LooklookSettings, LooklookScope } from './settings.ts'
+export { AudioConfig } from './settings.ts'
+export type { VisionProviderConfig, VisionSettings, VisionScope, LooklookSettings, LooklookScope, AudioProviderConfig, AudioSettings, AudioScope } from './settings.ts'
 export { PLACEHOLDER_TEXT } from './translate.ts'
 export type { DescribeImageInput, DescribeResult } from './vision-client.ts'
 export { describeImages, statusMessage } from './vision-client.ts'
@@ -66,6 +68,8 @@ export function apply(ctx: Context, config: VisionSettings): void {
   // Feature master switches (settings page → plugin area).
   const features: LooklookScope = ctx.settings.register(settingsNamespace('looklook'), LooklookConfig, { base: undefined })
   const scope: VisionScope = ctx.settings.register(settingsNamespace('vision'), Config, { base: config })
+  // L3 audio understanding: optional, OFF by default (route A transcript only).
+  const audioScope: AudioScope = ctx.settings.register(settingsNamespace('looklook-audio'), AudioConfig, { base: undefined })
 
   const multimodalEnabled = (): boolean => looklookFeatures(features).multimodal
 
@@ -89,7 +93,7 @@ export function apply(ctx: Context, config: VisionSettings): void {
   ctx.systemPrompt.section({
     name: 'looklook:files',
     order: 205,
-    text: '用户上传的文件（压缩包、视频等）会保存到会话工作区的 .uploads/ 目录，上传时消息里会带有文件路径。处理压缩包用 process_zip 工具（list / extract / read_entry）；处理其它文件用 bash/fs 工具。',
+    text: '用户上传的文件（压缩包、视频等）会保存到会话工作区的 .uploads/ 目录，上传时消息里会带有文件路径。处理压缩包用 process_zip 工具（list / extract / read_entry）；理解视频用 looklook_watch 工具（传入本地文件路径或视频链接）；处理其它文件用 bash/fs 工具。',
   })
 
   // rc.6 admission override: the api-proxy's hardcoded text-only refusal
@@ -147,6 +151,9 @@ export function apply(ctx: Context, config: VisionSettings): void {
 
   // ZIP processing tool (vendored from dsh-zip), always available.
   registerZipTool(ctx)
+
+  // Video understanding: looklook_watch (local file or URL; vendored worker).
+  registerWatchTool(ctx, audioScope)
 
   // Upload channel (archives + video, extension whitelist graded by the
   // moreExtensions switch).

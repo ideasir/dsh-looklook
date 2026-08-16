@@ -53,6 +53,71 @@ export const Config: Schema<VisionSettings> = Schema.object({
 /** The settings owner handle: merged value + live updates. */
 export type VisionScope = SettingsScope<VisionSettings>
 
+// ── Audio understanding (L3): optional, toggleable ──
+
+/**
+ * One audio-understanding provider (an OpenAI-compatible chat-completions
+ * endpoint that accepts audio input, e.g. GPT-4o-audio / Gemini). When
+ * configured, video analysis understands tone/music/pace on top of the
+ * transcript (route B); when absent, it degrades to transcript-only
+ * (route A). Disabled by default so users pay nothing until they opt in.
+ */
+export interface AudioProviderConfig {
+  /** Stable unique id for this provider entry. */
+  id: string
+  /** Display name shown in settings. */
+  name: string
+  /** OpenAI-compatible base URL; `/chat/completions` is appended when absent. */
+  baseURL: string
+  /** Credential reference (environment-variable style) holding the API key. */
+  apiKeyEnv: string
+  /** Model id accepted by the endpoint (audio-capable). */
+  model: string
+  /** Per-request timeout budget in milliseconds. */
+  timeoutMs?: number
+  /** Whether this provider participates. */
+  enabled?: boolean
+}
+
+/** Whether L3 audio understanding is on at all. */
+export const AUDIO_FEATURE_KEY = 'audioUnderstanding' as const
+
+/** Audio-understanding settings (L3). */
+export interface AudioSettings {
+  /** Master switch: OFF = route A (transcript only, free); ON = route B. */
+  audioUnderstanding: boolean
+  /** Audio provider(s); the first enabled is primary. */
+  providers: AudioProviderConfig[]
+}
+
+export const AudioConfig: Schema<AudioSettings> = Schema.object({
+  audioUnderstanding: Schema.boolean().default(false),
+  providers: Schema.array(Schema.object({
+    id: Schema.string().required(),
+    name: Schema.string().required(),
+    baseURL: Schema.string().required(),
+    apiKeyEnv: Schema.string().required().role('credential-ref'),
+    model: Schema.string().required(),
+    timeoutMs: Schema.number().min(1000).max(600000).default(30_000),
+    enabled: Schema.boolean().default(true),
+  })).default([]),
+})
+
+/** The audio settings owner handle. */
+export type AudioScope = SettingsScope<AudioSettings>
+
+/** Whether L3 audio understanding is enabled (switch AND a provider). */
+export function audioEnabled(scope: AudioScope): boolean {
+  const value = scope.get()
+  if (value.audioUnderstanding !== true) return false
+  return value.providers.some(provider => provider.enabled !== false)
+}
+
+/** The enabled audio providers in failover order. */
+export function enabledAudioProviders(scope: AudioScope): AudioProviderConfig[] {
+  return scope.get().providers.filter(provider => provider.enabled !== false)
+}
+
 // ── Feature toggles (the plugin master switches) ──
 
 /** Plugin-level feature switches shown in the settings page. */

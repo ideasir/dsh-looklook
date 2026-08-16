@@ -56,7 +56,7 @@ console.log("tools registered:", tools.map(t => t.name));
 console.log("system prompts:", prompts.map(p => p.name));
 console.log("events:", handlers.map(h => h[0]).join(", "));
 const names = tools.map(t => t.name);
-if (names.length !== 2 || !names.includes("looklook_describe") || !names.includes("process_zip")) {
+if (names.length !== 3 || !names.includes("looklook_describe") || !names.includes("process_zip") || !names.includes("looklook_watch")) {
   throw new Error("tools not registered: " + names.join(", "));
 }
 if (prompts.length < 2) throw new Error("system prompts missing");

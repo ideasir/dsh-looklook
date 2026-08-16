@@ -35,6 +35,45 @@ export interface VisionSettings {
 export declare const Config: Schema<VisionSettings>;
 /** The settings owner handle: merged value + live updates. */
 export type VisionScope = SettingsScope<VisionSettings>;
+/**
+ * One audio-understanding provider (an OpenAI-compatible chat-completions
+ * endpoint that accepts audio input, e.g. GPT-4o-audio / Gemini). When
+ * configured, video analysis understands tone/music/pace on top of the
+ * transcript (route B); when absent, it degrades to transcript-only
+ * (route A). Disabled by default so users pay nothing until they opt in.
+ */
+export interface AudioProviderConfig {
+    /** Stable unique id for this provider entry. */
+    id: string;
+    /** Display name shown in settings. */
+    name: string;
+    /** OpenAI-compatible base URL; `/chat/completions` is appended when absent. */
+    baseURL: string;
+    /** Credential reference (environment-variable style) holding the API key. */
+    apiKeyEnv: string;
+    /** Model id accepted by the endpoint (audio-capable). */
+    model: string;
+    /** Per-request timeout budget in milliseconds. */
+    timeoutMs?: number;
+    /** Whether this provider participates. */
+    enabled?: boolean;
+}
+/** Whether L3 audio understanding is on at all. */
+export declare const AUDIO_FEATURE_KEY: "audioUnderstanding";
+/** Audio-understanding settings (L3). */
+export interface AudioSettings {
+    /** Master switch: OFF = route A (transcript only, free); ON = route B. */
+    audioUnderstanding: boolean;
+    /** Audio provider(s); the first enabled is primary. */
+    providers: AudioProviderConfig[];
+}
+export declare const AudioConfig: Schema<AudioSettings>;
+/** The audio settings owner handle. */
+export type AudioScope = SettingsScope<AudioSettings>;
+/** Whether L3 audio understanding is enabled (switch AND a provider). */
+export declare function audioEnabled(scope: AudioScope): boolean;
+/** The enabled audio providers in failover order. */
+export declare function enabledAudioProviders(scope: AudioScope): AudioProviderConfig[];
 /** Plugin-level feature switches shown in the settings page. */
 export interface LooklookSettings {
     /** Master switch for the vision (multi-modal) feature. */
