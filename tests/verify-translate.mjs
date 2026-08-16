@@ -1,4 +1,4 @@
-import { replaceImagesWithPlaceholder, imageMarker, PLACEHOLDER_TEXT } from "/tmp/dsh-looklook/lib/translate.js";
+import { replaceImagesWithPlaceholder, imageMarker, PLACEHOLDER_TEXT } from "../lib/translate.js";
 
 // 1) marker format: full ref JSON
 const ref = { attachmentId: "sha256:abc123", mediaType: "image/png", bytes: 42, width: 300, height: 400 };
@@ -31,6 +31,6 @@ if (!textBlock.text.includes(PLACEHOLDER_TEXT)) throw new Error("placeholder mis
 if (!textBlock.text.includes("sha256:img1")) throw new Error("marker missing in placeholder path");
 
 // 4) no session append anywhere in the host build
-const host = await import("/tmp/dsh-looklook/lib/index.js");
+const host = await import("../lib/index.js");
 console.log("host exports:", Object.keys(host).sort().join(", "));
 console.log("ALL TESTS PASS");

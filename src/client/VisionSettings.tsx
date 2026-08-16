@@ -19,6 +19,7 @@ import {
   IconChevronDownOutline14, IconChevronUpOutline14,
   IconEditOutline16, IconPlusOutline16, IconTrashOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { namespaceValueOf } from './settings-view.ts'
 
 /** Injected face supplied by the plugin apply closure. */
 export interface VisionSettingsInjected {
@@ -57,16 +58,8 @@ interface VisionSettingsView {
 }
 
 function visionProvidersOf(namespaces: unknown): ProviderDraft[] {
-  if (!Array.isArray(namespaces)) return []
-  const entry = namespaces.find(namespace => (
-    typeof namespace === 'object' && namespace !== null
-    && (namespace as { ns?: unknown }).ns === 'vision'
-  ))
-  const value = entry !== undefined ? (entry as { value?: unknown }).value : undefined
-  if (typeof value !== 'object' || value === null) return []
-  return Array.isArray((value as VisionSettingsView).providers)
-    ? (value as VisionSettingsView).providers ?? []
-    : []
+  const value = namespaceValueOf(namespaces, 'vision') as VisionSettingsView | undefined
+  return Array.isArray(value?.providers) ? value.providers : []
 }
 
 function newProviderId(): string {

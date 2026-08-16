@@ -12,7 +12,6 @@
  */
 import type { ImageBlock, Message } from '@deepseek-ai/dsh-llm';
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment';
-import { statusMessage } from './vision-client.ts';
 /** The text the conversation model receives for an image while the eye is off. */
 export declare const PLACEHOLDER_TEXT = "[\u56FE\u7247\u5DF2\u7701\u7565]\n\u6CA1\u6709\u5F00\u542F\u591A\u6A21\u6001\u529F\u80FD";
 /** Marker delimiters the client scans for to render the original image. */
@@ -25,8 +24,6 @@ export declare const HIDE_END = "\u3010looklook:\u7ED3\u675F\u3011";
  * marker carries the full image reference JSON so the client can render the
  * image at its natural aspect ratio and open it in the native lightbox. */
 export declare function imageMarker(ref: ImageAttachmentRef): string;
-/** JSON serialization of one image reference (the tool's image_ref argument). */
-export declare function imageRefJson(ref: ImageAttachmentRef): string;
 /**
  * Build the model-visible text for one image: a hidden-from-display tool
  * reference (the main model uses it to call `looklook_describe`) plus the
@@ -42,4 +39,3 @@ export declare function replaceImagesWithPlaceholder(messages: readonly Message[
  * describe tool can read the image by the id the user message carries.
  */
 export declare function rewriteImagesToToolReferences(messages: readonly Message[], registry?: Map<string, ImageAttachmentRef>): Message[];
-export { statusMessage };

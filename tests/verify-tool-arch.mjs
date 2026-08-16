@@ -1,5 +1,5 @@
-import { buildImageToolReference, imageMarker, rewriteImagesToToolReferences, replaceImagesWithPlaceholder } from "/tmp/dsh-looklook/lib/translate.js";
-import { apply } from "/tmp/dsh-looklook/lib/index.js";
+import { buildImageToolReference, imageMarker, rewriteImagesToToolReferences, replaceImagesWithPlaceholder } from "../lib/translate.js";
+import { apply } from "../lib/index.js";
 
 // 1) tool reference text: hidden wrapper + marker
 const image = { type: "image", attachment: { attachmentId: "sha256:abc", mediaType: "image/png", bytes: 100, width: 10, height: 10 } };

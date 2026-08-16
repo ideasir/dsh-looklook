@@ -7,6 +7,7 @@
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
+import { namespaceValueOf } from './settings-view.ts'
 
 /** Feature-switch state. */
 export type FeatureState =
@@ -17,16 +18,6 @@ export type FeatureState =
 interface LooklookSettingsView {
   multimodal?: boolean
   moreExtensions?: boolean
-}
-
-function looklookSettingsOf(namespaces: unknown): LooklookSettingsView | undefined {
-  if (!Array.isArray(namespaces)) return undefined
-  const entry = namespaces.find(namespace => (
-    typeof namespace === 'object' && namespace !== null
-    && (namespace as { ns?: unknown }).ns === 'looklook'
-  ))
-  const value = entry !== undefined ? (entry as { value?: unknown }).value : undefined
-  return typeof value === 'object' && value !== null ? value as LooklookSettingsView : undefined
 }
 
 /** Plugin feature controller: one store + load + update. */
@@ -46,7 +37,7 @@ export function createFeatureController(api: IApiClient): FeatureController {
       store.set({ status: 'ready', multimodal: true, moreExtensions: true })
       return
     }
-    const value = looklookSettingsOf(response.result.value.namespaces)
+    const value = namespaceValueOf(response.result.value.namespaces, 'looklook') as LooklookSettingsView | undefined
     store.set({
       status: 'ready',
       multimodal: value?.multimodal !== false,

@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
-const s = readFileSync("/root/.dsh/profiles/web/node_modules/dsh-looklook/lib/client.js", "utf8");
+import { fileURLToPath } from "node:url";
+const s = readFileSync(fileURLToPath(new URL("../lib/client.js", import.meta.url)), "utf8");
 const i = s.indexOf("trimmed.length > 0");
 const seg = s.slice(i, i + 400);
-console.log(seg.includes("{trimmed}") ? "BUBBLE USES trimmed: OK" : "STILL uses cleaned: FAIL");
+console.log(seg.includes("children: trimmed") ? "BUBBLE USES trimmed: OK" : "STILL uses cleaned: FAIL");
 
 // simulate the render: strip hidden, remove marker, then display trimmed
 const HIDE_START = "【looklook:开始】";

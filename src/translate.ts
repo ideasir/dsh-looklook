@@ -14,7 +14,7 @@
 import { contentHasImage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ImageBlock, Message } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { statusMessage } from './vision-client.ts'
+import { imageRefJson } from './ref.ts'
 
 /** The text the conversation model receives for an image while the eye is off. */
 export const PLACEHOLDER_TEXT = '[图片已省略]\n没有开启多模态功能'
@@ -32,17 +32,6 @@ export const HIDE_END = '【looklook:结束】'
  * image at its natural aspect ratio and open it in the native lightbox. */
 export function imageMarker(ref: ImageAttachmentRef): string {
   return `\n\n${IMAGE_MARKER_PREFIX}${imageRefJson(ref)}${IMAGE_MARKER_SUFFIX}`
-}
-
-/** JSON serialization of one image reference (the tool's image_ref argument). */
-export function imageRefJson(ref: ImageAttachmentRef): string {
-  return JSON.stringify({
-    attachmentId: ref.attachmentId,
-    mediaType: ref.mediaType,
-    bytes: ref.bytes,
-    width: ref.width,
-    height: ref.height,
-  })
 }
 
 /**
@@ -123,5 +112,3 @@ export function rewriteImagesToToolReferences(
       : message
   ))
 }
-
-export { statusMessage }

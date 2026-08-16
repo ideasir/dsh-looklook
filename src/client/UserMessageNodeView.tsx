@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react'
 import { ImageLightbox } from '@deepseek-ai/dsh-client-ui-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ImageLoader, ImageLightboxLabels } from '@deepseek-ai/dsh-client-ui-attachment'
+import { formatSize } from './format.ts'
 
 /** The host's attachment marker: 「【附图:<ref-json-or-id>】」. */
 const IMAGE_MARKER_RE = /【附图:([^】]+)】/g
@@ -31,12 +32,6 @@ interface FileMeta {
   name: string
   path: string
   size: number
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 /** A rendered attachment card: icon + name + size. */

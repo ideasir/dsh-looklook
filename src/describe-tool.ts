@@ -11,8 +11,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { VisionScope, LooklookScope } from './settings.ts'
-import { looklookFeatures } from './settings.ts'
+import { enabledProviders, looklookFeatures } from './settings.ts'
 import { describeImages } from './vision-client.ts'
+import { isImageRef, parseContentRef } from './ref.ts'
 
 /**
  * Resolve the image_ref argument: prefer the exact reference recorded when
@@ -25,30 +26,11 @@ function resolveRef(
   const trimmed = raw.trim()
   if (trimmed.length === 0) return { error: 'image_ref 为空' }
   // 1) Try JSON reference (what the user message carries).
-  try {
-    const parsed = JSON.parse(trimmed) as Partial<ImageAttachmentRef>
-    if (typeof parsed?.attachmentId === 'string' && parsed.attachmentId.length > 0) {
-      const exact = registry.get(parsed.attachmentId)
-      if (exact !== undefined) return { ref: exact }
-      if (
-        typeof parsed.mediaType === 'string'
-        && typeof parsed.bytes === 'number'
-        && typeof parsed.width === 'number'
-        && typeof parsed.height === 'number'
-      ) {
-        return {
-          ref: {
-            attachmentId: parsed.attachmentId,
-            mediaType: parsed.mediaType as ImageAttachmentRef['mediaType'],
-            bytes: parsed.bytes,
-            width: parsed.width,
-            height: parsed.height,
-          },
-        }
-      }
-    }
-  } catch {
-    /* not JSON — fall through to bare-id lookup */
+  const parsed = parseContentRef(trimmed)
+  if (parsed !== undefined && isImageRef(parsed)) {
+    const exact = registry.get(parsed.attachmentId)
+    if (exact !== undefined) return { ref: exact }
+    return { ref: parsed }
   }
   // 2) Bare attachmentId lookup.
   const byId = registry.get(trimmed)
@@ -104,7 +86,7 @@ export function registerDescribeTool(
       if ('error' in resolved) return { text: '识图失败：' + resolved.error }
       try {
         const stored = await ctx.attachments.readImage(resolved.ref, exec.signal)
-        const providers = scope.get().providers.filter(provider => provider.enabled !== false)
+        const providers = enabledProviders(scope)
         const maxChars = scope.get().maxDescribeChars
         const credentials = ctx.get('credentials')
         const resolveApiKey = async (ref: string): Promise<string | undefined> => {

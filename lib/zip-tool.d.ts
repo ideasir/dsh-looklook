@@ -2,8 +2,9 @@
  * dsh-looklook/zip-tool — the `process_zip` tool (vendored from
  * @ideasir/dsh-zip): list, extract, and read entries of ZIP archives.
  *
- * Registration is gated by the `zip` feature toggle at execution time, so
- * toggling the switch in settings takes effect without a restart.
+ * The tool is always registered; the upload channel's extension whitelist
+ * (whether archives reach `.uploads/` at all) is governed by the
+ * `moreExtensions` switch instead.
  */
 import type { Context } from '@deepseek-ai/cordis';
 import { ZipStore } from './zip-store.ts';
@@ -147,8 +148,5 @@ export declare function buildExtractSummary(result: ZipExtractResult): string;
  * @param signal - Optional cancellation signal.
  */
 export declare function executeTool(store: ZipStore, args: ToolArgs, signal?: AbortSignal): Promise<ToolOutput>;
-/**
- * Register the `process_zip` tool (always available; the upload extension
- * whitelist is governed by the `moreExtensions` switch instead).
- */
+/** Register the `process_zip` tool (always available). */
 export declare function registerZipTool(ctx: Context): void;

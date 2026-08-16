@@ -4,9 +4,13 @@
  * session workspace `.uploads/`) and return their paths. The caller stages
  * the notes into the input draft — nothing is sent until the user presses
  * Enter.
+ *
+ * NOTE: this client-side extension list is a MIRROR of the authoritative
+ * host whitelist in `src/upload.ts` (ARCHIVE_EXTENSIONS + VIDEO_EXTENSIONS).
+ * Keep them in sync; the verify scripts assert equality.
  */
 
-/** Accepted extensions (archives + video). */
+/** Accepted extensions (archives + video), mirroring `src/upload.ts`. */
 export const ACCEPT_EXTENSIONS = ['.zip', '.7z', '.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v']
 
 /** Whether a file name is uploadable through the looklook channel. */
@@ -49,27 +53,4 @@ export async function uploadFile(sessionId: string, file: File): Promise<{ path:
     throw new Error(body.error ?? `上传失败（HTTP ${response.status}）`)
   }
   return { path: body.path, name: file.name }
-}
-
-/**
- * Upload every file and return the saved paths WITHOUT sending anything —
- * the caller stages the note into the input draft, so nothing is sent until
- * the user presses Enter.
- * @returns the successfully saved file notes (name + path lines).
- */
-export async function uploadFiles(
-  sessionId: string,
-  files: File[],
-  buildNote: (name: string, path: string) => string,
-): Promise<string[]> {
-  const lines: string[] = []
-  for (const file of files) {
-    try {
-      const { path } = await uploadFile(sessionId, file)
-      lines.push(buildNote(file.name, path))
-    } catch {
-      // skip failed files silently; the successful ones still stage
-    }
-  }
-  return lines
 }

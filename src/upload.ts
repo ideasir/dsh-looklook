@@ -8,6 +8,9 @@
  *
  * A standard webServer route (registered like any other `/api` route), so
  * no DSH source is modified.
+ *
+ * The extension lists below are the AUTHORITATIVE whitelist; the client's
+ * `upload-shared.ts` mirror must stay in sync (verified by tests).
  */
 
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -26,6 +29,9 @@ export const ARCHIVE_EXTENSIONS = ['.zip', '.7z'] as const
 
 /** Video extensions accepted by the upload channel. */
 export const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v'] as const
+
+/** Every extension the upload channel can accept (archives + video). */
+export const ALL_EXTENSIONS: readonly string[] = [...ARCHIVE_EXTENSIONS, ...VIDEO_EXTENSIONS]
 
 /** Subdirectory (inside the session workspace) where uploads are stored. */
 export const UPLOADS_DIR = '.uploads'

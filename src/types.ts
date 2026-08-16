@@ -13,8 +13,6 @@ import type { GenerateOptions, ModelModality } from '@deepseek-ai/dsh-llm'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 
-export type { SessionId }
-
 /** One image-admission interrogation (mirrors the gateway payload). */
 export interface ImageAdmissionPayload {
   sessionId: SessionId
@@ -65,33 +63,3 @@ export type VisionErrorCode =
   | 'timeout'
   | 'network'
   | 'unconfigured'
-
-/** One `vision/describe` log record: what the model actually saw for one image. */
-export interface VisionDescribeEvent {
-  /** The attachment this record describes. */
-  attachmentId: string
-  /** Vision provider that produced the record. */
-  provider: string
-  /** Vision model id that produced the record. */
-  model: string
-  /** Whether the vision call succeeded. */
-  ok: boolean
-  /** Machine error code; present only when `ok` is false. */
-  error?: { code: VisionErrorCode }
-  /** The text the conversation model received (description or error copy). */
-  text?: string
-  /** The primary provider that failed when a fallback produced the record. */
-  degradedFrom?: string
-}
-
-declare module '@deepseek-ai/dsh-session/types' {
-  interface SessionEventMap {
-    /**
-     * Log-only record of one vision translation. `ignorable` lets builds that
-     * do not know this event type skip it instead of refusing the log; a
-     * replay that understands it can reconstruct the exact model-visible text
-     * for the image.
-     */
-    'vision/describe': VisionDescribeEvent
-  }
-}

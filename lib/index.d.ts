@@ -1,5 +1,5 @@
 /**
- * dsh-looklook — "看一看" any file for DeepSeek Harness.
+ * dsh-looklook — "look at anything" for DeepSeek Harness.
  *
  * Host plugin. Feature switches (settings page):
  * - 多模态 (multimodal): image vision assist for text-only models. When ON,
@@ -24,7 +24,7 @@ export type { VisionProviderConfig, VisionSettings, VisionScope, LooklookSetting
 export { PLACEHOLDER_TEXT } from './translate.ts';
 export type { DescribeImageInput, DescribeResult } from './vision-client.ts';
 export { describeImages, statusMessage } from './vision-client.ts';
-export type { ImageAdmissionDecision, ImageAdmissionPayload, VisionDescribeEvent, VisionErrorCode } from './types.ts';
+export type { ImageAdmissionDecision, ImageAdmissionPayload, VisionErrorCode } from './types.ts';
 /** Cordis plugin name used by loader diagnostics. */
 export declare const name = "looklook";
 /** Required services: settings, llm, sessions, attachments, credentials, tools, systemPrompt, webServer. */

@@ -90,8 +90,3 @@ export function eyeStateFor(scope: VisionScope, sessionId: string | undefined): 
 export function enabledProviders(scope: VisionScope): VisionProviderConfig[] {
   return scope.get().providers.filter(provider => provider.enabled !== false)
 }
-
-/** Whether any enabled vision provider is configured. */
-export function hasConfiguredProvider(scope: VisionScope): boolean {
-  return enabledProviders(scope).length > 0
-}

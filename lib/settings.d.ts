@@ -51,5 +51,3 @@ export declare function looklookFeatures(scope: LooklookScope): LooklookSettings
 export declare function eyeStateFor(scope: VisionScope, sessionId: string | undefined): 'on' | 'off';
 /** The enabled providers in failover order; empty when none is configured. */
 export declare function enabledProviders(scope: VisionScope): VisionProviderConfig[];
-/** Whether any enabled vision provider is configured. */
-export declare function hasConfiguredProvider(scope: VisionScope): boolean;

@@ -4,8 +4,12 @@
  * session workspace `.uploads/`) and return their paths. The caller stages
  * the notes into the input draft — nothing is sent until the user presses
  * Enter.
+ *
+ * NOTE: this client-side extension list is a MIRROR of the authoritative
+ * host whitelist in `src/upload.ts` (ARCHIVE_EXTENSIONS + VIDEO_EXTENSIONS).
+ * Keep them in sync; the verify scripts assert equality.
  */
-/** Accepted extensions (archives + video). */
+/** Accepted extensions (archives + video), mirroring `src/upload.ts`. */
 export declare const ACCEPT_EXTENSIONS: string[];
 /** Whether a file name is uploadable through the looklook channel. */
 export declare function isUploadableName(name: string): boolean;
@@ -19,10 +23,3 @@ export declare function uploadFile(sessionId: string, file: File): Promise<{
     path: string;
     name: string;
 }>;
-/**
- * Upload every file and return the saved paths WITHOUT sending anything —
- * the caller stages the note into the input draft, so nothing is sent until
- * the user presses Enter.
- * @returns the successfully saved file notes (name + path lines).
- */
-export declare function uploadFiles(sessionId: string, files: File[], buildNote: (name: string, path: string) => string): Promise<string[]>;

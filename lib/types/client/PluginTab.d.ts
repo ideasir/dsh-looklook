@@ -3,7 +3,7 @@
  * settings section's "插件配置" tab (`settings.plugin.item`). Uses the same
  * collapsible card chrome as the agent-loop / bash / web-search cards:
  * a header (title + description + chevron) that discloses the controls:
- * - the master switches (多模态 / ZIP) and the 7z install support;
+ * - the master switches (多模态 / 更多扩展名);
  * - the vision-model configuration, visible while 多模态 is ON.
  */
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client';

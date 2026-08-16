@@ -8,6 +8,9 @@
  *
  * A standard webServer route (registered like any other `/api` route), so
  * no DSH source is modified.
+ *
+ * The extension lists below are the AUTHORITATIVE whitelist; the client's
+ * `upload-shared.ts` mirror must stay in sync (verified by tests).
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { LooklookScope } from './settings.ts';
@@ -17,6 +20,8 @@ export declare const MAX_UPLOAD_BYTES: number;
 export declare const ARCHIVE_EXTENSIONS: readonly [".zip", ".7z"];
 /** Video extensions accepted by the upload channel. */
 export declare const VIDEO_EXTENSIONS: readonly [".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v"];
+/** Every extension the upload channel can accept (archives + video). */
+export declare const ALL_EXTENSIONS: readonly string[];
 /** Subdirectory (inside the session workspace) where uploads are stored. */
 export declare const UPLOADS_DIR = ".uploads";
 /** Whether the extension is on the archive whitelist. */

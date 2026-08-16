@@ -8,6 +8,7 @@
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
+import { namespaceValueOf } from './settings-view.ts'
 
 /** Eye toggle state for one session. */
 export type EyeState =
@@ -18,19 +19,6 @@ export type EyeState =
 interface VisionSettingsView {
   providers?: Array<{ enabled?: boolean }>
   sessionOverrides?: Record<string, 'on' | 'off'>
-}
-
-/** Load one settings describe result down to the `vision` namespace value. */
-function visionSettingsOf(namespaces: unknown): VisionSettingsView | undefined {
-  if (!Array.isArray(namespaces)) return undefined
-  const entry = namespaces.find(namespace => (
-    typeof namespace === 'object' && namespace !== null
-    && (namespace as { ns?: unknown }).ns === 'vision'
-  ))
-  const value = entry !== undefined
-    ? (entry as { value?: unknown }).value
-    : undefined
-  return typeof value === 'object' && value !== null ? value as VisionSettingsView : undefined
 }
 
 /** Per-session eye controller: one store, load, and toggle. */
@@ -49,7 +37,7 @@ export function createEyeController(api: IApiClient, sessionId: string): EyeCont
       store.set({ status: 'ready', eye: 'on', unconfigured: true })
       return
     }
-    const vision = visionSettingsOf(response.result.value.namespaces)
+    const vision = namespaceValueOf(response.result.value.namespaces, 'vision') as VisionSettingsView | undefined
     const eye = vision?.sessionOverrides?.[sessionId] ?? 'on'
     const unconfigured = !(vision?.providers ?? []).some(provider => provider.enabled !== false)
     store.set({ status: 'ready', eye, unconfigured })

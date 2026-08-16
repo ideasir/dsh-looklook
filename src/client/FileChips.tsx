@@ -7,6 +7,7 @@
 
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PendingFilesController, PendingFilesState } from './pending-files.ts'
+import { formatSize } from './format.ts'
 
 /** Injected face supplied by the plugin apply closure. */
 export interface FileChipsInjected {
@@ -24,12 +25,6 @@ export interface FileChipsInjected {
   sending: boolean
   /** Visible send error (or null). */
   sendError: string | null
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 /** One chip card (hover reveals the remove ×). */

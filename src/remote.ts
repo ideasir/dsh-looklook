@@ -14,10 +14,10 @@ export type LooklookListModelsResult =
   | { ok: true; models: string[] }
   | { ok: false; error: string }
 
-/** Credential-bearing fetch: fail before following any redirect. */
-/** Fail before following any redirect. The signal is created per call: an
- * `AbortSignal.timeout()` starts its timer at creation, so a module-level
- * signal is permanently aborted ten seconds after load. */
+/** Credential-bearing fetch: fail before following any redirect. The signal is
+ * created per call: an `AbortSignal.timeout()` starts its timer at creation,
+ * so a module-level signal would be permanently aborted ten seconds after
+ * load. */
 const FETCH_REDIRECT = 'error' as const
 
 /**

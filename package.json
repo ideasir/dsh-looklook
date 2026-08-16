@@ -78,7 +78,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json --emitDeclarationOnly && tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
-    "verify": "node patches/apply-patch.mjs --check && node scripts/verify-e2e.mjs",
+    "verify": "node patches/apply-patch.mjs --check && node tests/verify-translate.mjs && node tests/verify-tool-arch.mjs && node tests/verify-lightbox.mjs && node tests/verify-thumb.mjs && node tests/verify-upload-list.mjs && node tests/verify-bubble.mjs",
     "prepare": "npm run build"
   },
   "license": "MIT"

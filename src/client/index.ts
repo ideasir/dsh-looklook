@@ -120,7 +120,6 @@ export function apply(ctx: ClientContext): void {
    * Staged files are sent by the reliable panel button (merge into the draft
    * + submit) or the direct prompt fallback; no submit monkey-patching.
    */
-  const wrapSubmit = (): boolean => false
 
   const eyes = new Map<string, EyeController>()
   const eyeFor = (sessionId: string): EyeController => {

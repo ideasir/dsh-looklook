@@ -1,5 +1,5 @@
 /**
- * dsh-looklook — "看一看" any file for DeepSeek Harness.
+ * dsh-looklook — "look at anything" for DeepSeek Harness.
  *
  * Host plugin. Feature switches (settings page):
  * - 多模态 (multimodal): image vision assist for text-only models. When ON,
@@ -38,7 +38,7 @@ export type { VisionProviderConfig, VisionSettings, VisionScope, LooklookSetting
 export { PLACEHOLDER_TEXT } from './translate.ts'
 export type { DescribeImageInput, DescribeResult } from './vision-client.ts'
 export { describeImages, statusMessage } from './vision-client.ts'
-export type { ImageAdmissionDecision, ImageAdmissionPayload, VisionDescribeEvent, VisionErrorCode } from './types.ts'
+export type { ImageAdmissionDecision, ImageAdmissionPayload, VisionErrorCode } from './types.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'looklook'
@@ -49,6 +49,11 @@ export const inject = ['settings', 'llm', 'sessions', 'attachments', 'credential
 /** Recognize whether any message in the request carries image content. */
 function requestHasImage(options: GenerateOptions): boolean {
   return options.messages.some(message => contentHasImage(message.content))
+}
+
+/** One admission decision for both gateways: allow only while multimodal is ON. */
+function admissionDecision(multimodalOn: boolean): 'allow' | undefined {
+  return multimodalOn ? 'allow' : undefined
 }
 
 /**
@@ -84,20 +89,20 @@ export function apply(ctx: Context, config: VisionSettings): void {
   ctx.systemPrompt.section({
     name: 'looklook:files',
     order: 205,
-    text: '用户上传的文件（压缩包、视频等）会保存到会话工作区的 .uploads/ 目录，上传时消息里会带有文件路径。处理压缩包用 process_zip 工具（list / extract / read_entry）；处理其它文件用 bash/fs 工具。7z 压缩包若解压失败，检查机器是否已安装 7z（插件设置页可安装）。',
+    text: '用户上传的文件（压缩包、视频等）会保存到会话工作区的 .uploads/ 目录，上传时消息里会带有文件路径。处理压缩包用 process_zip 工具（list / extract / read_entry）；处理其它文件用 bash/fs 工具。',
   })
 
   // rc.6 admission override: the api-proxy's hardcoded text-only refusal
   // consults this optional service (patched into dsh-host-apiproxy). Only
   // answer "allow" while the multimodal feature is ON.
   ctx.provide('imageAdmission', {
-    decide: () => (multimodalEnabled() ? 'allow' as const : undefined),
+    decide: () => admissionDecision(multimodalEnabled()),
   })
 
   // The gateway asks before admitting an image while the selected model is
   // text-only. Answer "allow" only while multimodal is ON; otherwise return
   // undefined so DSH falls back to native behavior.
-  ctx.on('prompt/image-admission', () => (multimodalEnabled() ? 'allow' : undefined))
+  ctx.on('prompt/image-admission', () => admissionDecision(multimodalEnabled()))
 
   // rc.6 request rewriting: `agent/pre-step` and `agent/request-messages`.
   // When multimodal is OFF the plugin does nothing to images (native).

@@ -3,7 +3,6 @@
  * card. Two slider-style switches:
  * - 支持更多扩展名 — ON adds .7z / video to the upload whitelist (.zip stays);
  * - 支持多模态 — ON enables image recognition and shows the vision config.
- * Plus the 7z install support row.
  */
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client';
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots';

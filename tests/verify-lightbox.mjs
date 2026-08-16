@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
-import { buildImageToolReference, imageMarker, replaceImagesWithPlaceholder } from "/tmp/dsh-looklook/lib/translate.js";
+import { fileURLToPath } from "node:url";
+import { buildImageToolReference, imageMarker, replaceImagesWithPlaceholder } from "../lib/translate.js";
 
 // 1) bundle references the external gallery package (not inlined)
-const s = readFileSync("/tmp/dsh-looklook/lib/client.js", "utf8");
+const s = readFileSync(fileURLToPath(new URL("../lib/client.js", import.meta.url)), "utf8");
 console.log("external require present:", s.includes("dsh-client-ui-attachment"));
 console.log("ImageGallery used:", s.includes("ImageGallery"));
 

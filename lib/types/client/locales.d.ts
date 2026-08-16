@@ -3,7 +3,6 @@
 export declare const zh: {
     'settings.nav': string;
     'settings.intro': string;
-    'settings.provider.header': string;
     'settings.provider.add': string;
     'settings.provider.name': string;
     'settings.provider.nameHint': string;
@@ -23,7 +22,6 @@ export declare const zh: {
     'settings.provider.moveUp': string;
     'settings.provider.moveDown': string;
     'settings.provider.remove': string;
-    'settings.provider.removeConfirm': string;
     'settings.provider.empty': string;
     'settings.save': string;
     'settings.cancel': string;
@@ -42,15 +40,10 @@ export declare const zh: {
     'features.extensions.desc': string;
     'features.multimodal.label': string;
     'features.multimodal.desc': string;
-    'upload.title': string;
     'upload.remove': string;
     'upload.send': string;
     'upload.sending': string;
-    'upload.unsupported': string;
-    'upload.failed': string;
-    'upload.uploading': string;
     'upload.message': string;
-    'vision.disabled': string;
 };
 /** The looklook namespace key union. */
 export type LookLookKey = keyof typeof zh;
@@ -58,7 +51,6 @@ export type LookLookKey = keyof typeof zh;
 export declare const en: {
     'settings.nav': string;
     'settings.intro': string;
-    'settings.provider.header': string;
     'settings.provider.add': string;
     'settings.provider.name': string;
     'settings.provider.nameHint': string;
@@ -78,7 +70,6 @@ export declare const en: {
     'settings.provider.moveUp': string;
     'settings.provider.moveDown': string;
     'settings.provider.remove': string;
-    'settings.provider.removeConfirm': string;
     'settings.provider.empty': string;
     'settings.save': string;
     'settings.cancel': string;
@@ -97,13 +88,8 @@ export declare const en: {
     'features.extensions.desc': string;
     'features.multimodal.label': string;
     'features.multimodal.desc': string;
-    'upload.title': string;
     'upload.remove': string;
     'upload.send': string;
     'upload.sending': string;
-    'upload.unsupported': string;
-    'upload.failed': string;
-    'upload.uploading': string;
     'upload.message': string;
-    'vision.disabled': string;
 };

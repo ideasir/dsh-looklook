@@ -4,7 +4,6 @@
 export const zh = {
   'settings.nav': '视觉模型',
   'settings.intro': '配置用于识别图片的视觉模型。支持多个提供商：第一个为主模型，其余为备用；主模型不可用时自动降级到备用模型。',
-  'settings.provider.header': '视觉模型提供商',
   'settings.provider.add': '添加提供商',
   'settings.provider.name': '名称',
   'settings.provider.nameHint': '显示名称，如「GLM-4V」',
@@ -24,7 +23,6 @@ export const zh = {
   'settings.provider.moveUp': '上移',
   'settings.provider.moveDown': '下移',
   'settings.provider.remove': '删除',
-  'settings.provider.removeConfirm': '确定删除该提供商？',
   'settings.provider.empty': '尚未配置视觉模型提供商。',
   'settings.save': '保存',
   'settings.cancel': '取消',
@@ -43,15 +41,10 @@ export const zh = {
   'features.extensions.desc': '开启后支持更多扩展名（.7z 压缩包、视频等）；关闭后仅支持 .zip。',
   'features.multimodal.label': '支持多模态',
   'features.multimodal.desc': '开启后支持图片识别，并显示视觉模型配置；关闭后图片回到 DSH 原生行为。',
-  'upload.title': '上传文件（压缩包/视频）',
   'upload.remove': '移除附件',
   'upload.send': '发送附件',
   'upload.sending': '发送中…',
-  'upload.unsupported': '不支持的文件类型：仅支持压缩包（.zip/.7z）和视频',
-  'upload.failed': '上传失败，请重试',
-  'upload.uploading': '上传中…',
   'upload.message': '上传了文件 {name} → {path}',
-  'vision.disabled': '多模态功能未开启：请先在「Look Look 功能」中开启「多模态」。',
 } satisfies Record<string, string>
 
 /** The looklook namespace key union. */
@@ -61,7 +54,6 @@ export type LookLookKey = keyof typeof zh
 export const en = {
   'settings.nav': 'Vision Models',
   'settings.intro': 'Configure the vision model that describes images. Multiple providers are supported: the first is primary, the rest are fallbacks; when the primary fails, recognition degrades to the next provider automatically.',
-  'settings.provider.header': 'Vision providers',
   'settings.provider.add': 'Add provider',
   'settings.provider.name': 'Name',
   'settings.provider.nameHint': 'Display name, e.g. "GLM-4V"',
@@ -81,7 +73,6 @@ export const en = {
   'settings.provider.moveUp': 'Move up',
   'settings.provider.moveDown': 'Move down',
   'settings.provider.remove': 'Remove',
-  'settings.provider.removeConfirm': 'Remove this provider?',
   'settings.provider.empty': 'No vision provider configured yet.',
   'settings.save': 'Save',
   'settings.cancel': 'Cancel',
@@ -100,13 +91,8 @@ export const en = {
   'features.extensions.desc': 'When ON, more extensions are accepted (.7z archives, video); when OFF only .zip is accepted.',
   'features.multimodal.label': 'Multimodal',
   'features.multimodal.desc': 'When ON, image recognition is available and the vision-model configuration is shown; when OFF images fall back to native DSH behavior.',
-  'upload.title': 'Upload file (archive/video)',
   'upload.remove': 'Remove attachment',
   'upload.send': 'Send attachment',
   'upload.sending': 'Sending…',
-  'upload.unsupported': 'Unsupported file type: archives (.zip/.7z) and video only',
-  'upload.failed': 'Upload failed, please retry',
-  'upload.uploading': 'Uploading…',
   'upload.message': 'Uploaded file {name} → {path}',
-  'vision.disabled': 'Multimodal is disabled: enable it under "Look Look Features" first.',
 } satisfies Record<LookLookKey, string>
