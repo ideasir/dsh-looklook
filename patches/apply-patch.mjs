@@ -181,11 +181,12 @@ const PATCHES = [
 	"ui-conversation",
 	"ui-theme",
 	"web-search-deepseek",
-	// dsh-looklook: vision-assist + looklook settings sections (exposed here
-	// because rc.6 has no register()-based exposure API — a harness upgrade
-	// must re-apply).
+	// dsh-looklook: vision-assist + looklook + audio-model settings sections
+	// (exposed here because rc.6 has no register()-based exposure API — a
+	// harness upgrade must re-apply).
 	"vision",
-	"looklook"
+	"looklook",
+	"looklook-audio"
 ];`,
       },
     ],
