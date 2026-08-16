@@ -46,7 +46,7 @@ export type { ImageAdmissionDecision, ImageAdmissionPayload, VisionErrorCode } f
 export const name = 'looklook'
 
 /** Required services: settings, llm, sessions, attachments, credentials, tools, systemPrompt, webServer. */
-export const inject = ['settings', 'llm', 'sessions', 'attachments', 'credentials', 'tools', 'systemPrompt', 'webServer']
+export const inject = ['settings', 'llm', 'sessions', 'attachments', 'credentials', 'tools', 'systemPrompt', 'webServer', 'fs']
 
 /** Recognize whether any message in the request carries image content. */
 function requestHasImage(options: GenerateOptions): boolean {

@@ -43,7 +43,13 @@
     "@deepseek-ai/schemastery": "^3.18.1"
   },
   "dependencies": {
-    "adm-zip": "^0.5.16"
+    "@deepseek-ai/dsh-timeout": "^0.1.0-rc.6",
+    "adm-zip": "^0.5.16",
+    "fast-xml-parser": "^4.5.0",
+    "fflate": "^0.8.2",
+    "pdfjs-dist": "^5.7.284",
+    "pngjs": "^7.0.0",
+    "psd.js": "^3.9.2"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -52,8 +58,8 @@
     "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-attachment": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-attachment": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-attachment": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-settings": "^0.1.0-rc.6",
@@ -77,9 +83,9 @@
     "typescript": "^5.7.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json --emitDeclarationOnly && tsdown",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json --emitDeclarationOnly && tsdown && node scripts/copy-worker.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
-    "verify": "node patches/apply-patch.mjs --check && node tests/verify-translate.mjs && node tests/verify-tool-arch.mjs && node tests/verify-lightbox.mjs && node tests/verify-thumb.mjs && node tests/verify-upload-list.mjs && node tests/verify-bubble.mjs",
+    "verify": "node patches/apply-patch.mjs --check && node tests/verify-translate.mjs && node tests/verify-tool-arch.mjs && node tests/verify-lightbox.mjs && node tests/verify-thumb.mjs && node tests/verify-upload-list.mjs && node tests/verify-bubble.mjs && node tests/verify-doc-parser.mjs",
     "prepare": "npm run build"
   },
   "license": "MIT"

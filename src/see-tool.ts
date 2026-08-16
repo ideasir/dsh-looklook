@@ -22,6 +22,7 @@ import type { AudioScope, LooklookScope, VisionScope } from './settings.ts'
 import { looklookFeatures } from './settings.ts'
 import { describeImageByRef } from './describe-tool.ts'
 import { watchVideo } from './video-tool.ts'
+import { readDocumentFile, isDocumentPath } from './doc-tool.ts'
 import { ZipStore, DEFAULT_MAX_ZIP_SIZE, DEFAULT_EXTRACT_DIR } from './zip-store.ts'
 import { buildEntryTree } from './zip-tool.ts'
 import { describeImages } from './vision-client.ts'
@@ -45,7 +46,7 @@ function mediaTypeOf(ext: string): string {
 }
 
 /** Classify a source string into a content branch. */
-type SourceKind = 'image-ref' | 'image-file' | 'video-file' | 'video-url' | 'zip' | 'unknown'
+type SourceKind = 'image-ref' | 'image-file' | 'video-file' | 'video-url' | 'zip' | 'document' | 'unknown'
 
 function classifySource(source: string): SourceKind {
   const lower = source.toLowerCase()
@@ -55,6 +56,7 @@ function classifySource(source: string): SourceKind {
   if (IMAGE_FILE_EXTENSIONS.includes(ext)) return 'image-file'
   if (VIDEO_FILE_EXTENSIONS.includes(ext)) return 'video-file'
   if (ext === '.zip') return 'zip'
+  if (isDocumentPath(source)) return 'document'
   // JSON image reference or bare attachmentId.
   if (lower.includes('attachmentid') || /^[a-z0-9_-]{10,}$/.test(source.trim())) return 'image-ref'
   return 'unknown'
@@ -119,12 +121,12 @@ export function registerSeeTool(
 ): void {
   ctx.tools.register(defineTool({
     name: 'looklook_see',
-    description: '查看并理解任何内容（图片、视频、压缩包等）并回答关于它的问题。source 填内容来源：用户消息里的图片引用（原样复制）、本地图片/视频/压缩包文件路径、或视频链接；question 填你要询问的问题（用户问什么就针对性地问什么）。图片内容对模型不可见，调用本工具是看到的唯一方式。',
+    description: '查看并理解任何内容（图片、视频、压缩包、文档）并回答关于它的问题。source 填内容来源：用户消息里的图片引用（原样复制）、本地图片/视频/压缩包/文档文件路径、或视频链接；question 填你要询问的问题（用户问什么就针对性地问什么）。图片内容对模型不可见，调用本工具是看到的唯一方式。',
     parameters: {
       source: {
         type: 'string',
         required: true,
-        description: '内容来源：图片引用 JSON、文件路径（图片/视频/zip）、或视频链接 URL。',
+        description: '内容来源：图片引用 JSON、文件路径（图片/视频/zip/文档如 docx/pdf/psd）、或视频链接 URL。',
       },
       question: {
         type: 'string',
@@ -174,8 +176,12 @@ export function registerSeeTool(
         case 'zip': {
           return { text: await listZip(source, question) }
         }
+        case 'document': {
+          const cwd = exec.agent?.session.header.cwd
+          return { text: await readDocumentFile(ctx, visionScope, audioScope, source, question, cwd, exec.signal) }
+        }
         default:
-          return { text: `无法识别该内容类型（source=${source}）。支持：图片（引用或文件路径）、视频（文件或链接）、压缩包（.zip）。` }
+          return { text: `无法识别该内容类型（source=${source}）。支持：图片（引用或文件路径）、视频（文件或链接）、压缩包（.zip）、文档（.docx/.xlsx/.pptx/.pdf/.psd）。` }
       }
     },
   }))
