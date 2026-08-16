@@ -85,6 +85,15 @@ DSH rc.6 的 api-proxy 对"文本模型 + 图片"会原生拒绝（`MODEL_DOES_N
 - 上传、ASR 安装、模态查询全部是 `remote.looklook.*` 的 Typert Remote 方法——走鉴权连接，无未授权 HTTP 路由；
 - 插件卸载即净：settings/工具/RPC/渲染槽全部是 effect，不留任何全局改动。
 
+### 信任边界（安全模型）
+
+本插件是**单用户桌面工具**的定位，面向本地/受信连接部署。以下几点是设计上的信任边界，多用户或不可信网络环境下部署时需自行加网关层：
+
+- **`looklook_see` 的路径参数**：模型（或注入提示词）可以请求读取它知道路径的任何文件——图片/文档分支通过 `fs` 服务读取（沙箱策略生效），视频/压缩包分支经 Python worker / adm-zip 读取（模型可控路径）。这与"模型可执行 bash 读取任意文件"属于同一信任模型：**模型本身就是可信代码执行者**。
+- **会话归属**：`remote.looklook.upload` / `readUpload` 只校验 session 存在与路径安全（basename + `.uploads/` 前缀），不校验"调用方属于该会话"——DSH 的 Remote 通道按连接鉴权，sessionId 由客户端自报（格式为可枚举的 `session-<n>`）。
+- **图片 URL 识别**：`looklook_see` 对 http(s) 图片 URL 会拉取字节并转发给（用户配置的）视觉供应商，`redirect: 'error'` 禁重定向；对内网端点的访问面与"模型可 curl 内网"一致。
+- **本地 ASR 安装**：一键安装执行 `pip3 install --break-system-packages faster-whisper` 并下载模型，属于机器级系统副作用，仅在受信本机触发。
+
 ## 开发日志
 
 见 `DEVLOG.md`（内部资料，不随包发布）。
