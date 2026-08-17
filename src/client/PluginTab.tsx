@@ -42,8 +42,8 @@ export interface LooklookCardInjected {
   envCheck: () => Promise<EnvCheckReport>
   /** One-click repair for one env item. */
   envRepair: (action: 'install-yt-dlp' | 'install-asr') => Promise<EnvCheckItem>
-  /** Reactive snapshot of the image recognition master switch. */
-  useImageRecognition: () => boolean
+  /** Reactive plugin master switch (gates the model sections). */
+  usePluginEnabled: () => boolean
 }
 
 const css = {
@@ -87,11 +87,11 @@ const css = {
 
 /** The plugin-configuration card body. */
 export function LooklookPluginCard(props: LooklookCardInjected) {
-  const { api, t, features, useFeatures, listModels, testVision, testAudio, asrStatus, asrInstall, envCheck, envRepair, useImageRecognition } = props
+  const { api, t, features, useFeatures, listModels, testVision, testAudio, asrStatus, asrInstall, envCheck, envRepair, usePluginEnabled } = props
   const [open, setOpen] = useState(false)
   const [envOpen, setEnvOpen] = useState(false)
   // Hook order stays stable: both hooks run before any conditional return.
-  const imageRecognitionOn = useImageRecognition()
+  const pluginEnabled = usePluginEnabled()
   const featuresProps: FeaturesInjected = { api, t, features, useFeatures }
   const modelProps: ModelSettingsInjected = { api, t, listModels, testVision, testAudio, asrStatus, asrInstall }
   const envProps: EnvCheckInjected = { t, envCheck, envRepair }
@@ -121,7 +121,7 @@ export function LooklookPluginCard(props: LooklookCardInjected) {
               {t('env.checkButton')}
             </Button>
           </div>
-          {imageRecognitionOn && (
+          {pluginEnabled && (
             <>
               <div style={{ border: 'none', borderTop: '1px solid var(--dsw-alias-border-l2)' }} />
               <ModelSettingsSection {...modelProps} />

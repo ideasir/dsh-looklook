@@ -1,16 +1,16 @@
 /**
  * dsh-looklook — "look at anything" for DeepSeek Harness.
  *
- * Host plugin. Feature switches (settings page):
- * - 识别图像 (imageRecognition): the plugin answers image questions for
- *   text-only conversation models. Images NEVER enter the native attachment
- *   pipeline: the client routes every dropped image through the plugin's own
- *   upload channel into the session workspace `.uploads/`, and the message
- *   the model receives carries only the file path. The api-proxy's native
- *   "model does not support image input" check is therefore never reached —
- *   no request rewriting, no admission override, no harness patch.
- * - 识别视频 (videoRecognition): video analysis (frames + audio understanding);
- *   OFF = files saved only, never analyzed.
+ * Host plugin. A single master switch (`looklook.enabled`) controls the whole
+ * plugin:
+ * - ON (default): every capability is enabled. Images / videos / archives /
+ *   documents are routed through the plugin's own file channel (upload into
+ *   the session `.uploads/`, the model sees only the path, then calls
+ *   `looklook_see`), so the api-proxy's native "model does not support image
+ *   input" check is never reached — no request rewriting, no admission
+ *   override, no harness patch.
+ * - OFF: the plugin is dormant — nothing is intercepted, the see tool answers
+ *   "已关闭", and DSH behaves exactly as if the plugin were absent.
  *
  * Settings exposure is the standard rc.6 mechanism: the `vision`,
  * `looklook`, and `looklook-audio` namespaces are declared through
@@ -18,9 +18,9 @@
  * configuration-client boundary automatically serves every configurable
  * provider's settings namespace. No `WEB_SETTINGS_NAMESPACES` patch.
  *
- * Upload / ASR install / model discovery are Remote RPCs on the `looklook`
- * wire namespace (Typert), so they inherit the api-proxy connection
- * authorization instead of exposing unauth'd HTTP routes.
+ * Upload / ASR install / model discovery / env check are Remote RPCs on the
+ * `looklook` wire namespace (Typert), so they inherit the api-proxy
+ * connection authorization instead of exposing unauth'd HTTP routes.
  *
  * All registrations are effects: unloading the plugin removes the settings
  * namespaces, the routes, and every disposer.
@@ -28,7 +28,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { Config, LooklookConfig, AudioConfig, looklookFeatures, type VisionSettings, type VisionScope, type LooklookScope, type AudioScope } from './settings.ts'
+import { Config, LooklookConfig, AudioConfig, looklookEnabled, type VisionSettings, type VisionScope, type LooklookScope, type AudioScope } from './settings.ts'
 import { registerSeeTool } from './see-tool.ts'
 import { registerZipTool } from './zip-tool.ts'
 import { LooklookRemoteService } from './remote.ts'
@@ -72,15 +72,16 @@ export function apply(ctx: Context, config: VisionSettings): void {
     { provider: 'looklook-audio', displayName: '看看·音频模型', settingsNs: 'looklook-audio', settingsPath: [] },
   ])
 
-  const imageRecognitionEnabled = (): boolean => looklookFeatures(features).imageRecognition
-  const videoRecognitionEnabled = (): boolean => looklookFeatures(features).videoRecognition
+  // Master switch: one switch controls the whole plugin (ON = all features,
+  // OFF = dormant, harness behaves as without it). The see tool answers
+  // "已关闭" when OFF; client interception is gated by the same flag.
 
   // Host receiver for the client's RPCs (model discovery, upload, ASR install,
-  // session modality). All ride the authorized api-proxy connection.
+  // session modality, env check). All ride the authorized api-proxy connection.
   ctx.plugin(LooklookRemoteService)
 
   // The unified "look at anything" tool (image / video / zip / document branches).
-  registerSeeTool(ctx, scope, audioScope, features, videoRecognitionEnabled)
+  registerSeeTool(ctx, scope, audioScope, features)
 
   // Tell the main model how to see content and how uploads land.
   ctx.systemPrompt.section({

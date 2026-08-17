@@ -15,4 +15,4 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { AudioScope, LooklookScope, VisionScope } from './settings.ts';
 /** Register the unified looklook_see tool. */
-export declare function registerSeeTool(ctx: Context, visionScope: VisionScope, audioScope: AudioScope, features: LooklookScope, videoRecognitionEnabled: () => boolean): void;
+export declare function registerSeeTool(ctx: Context, visionScope: VisionScope, audioScope: AudioScope, features: LooklookScope): void;

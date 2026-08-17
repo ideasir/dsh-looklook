@@ -40,6 +40,10 @@ export declare const zh: {
     'card.expand': string;
     'card.collapse': string;
     'features.switches.heading': string;
+    'features.master.label': string;
+    'features.master.desc': string;
+    'features.supported.heading': string;
+    'features.platforms.heading': string;
     'features.image.label': string;
     'features.image.desc': string;
     'features.video.label': string;
@@ -103,6 +107,10 @@ export declare const en: {
     'card.expand': string;
     'card.collapse': string;
     'features.switches.heading': string;
+    'features.master.label': string;
+    'features.master.desc': string;
+    'features.supported.heading': string;
+    'features.platforms.heading': string;
     'features.image.label': string;
     'features.image.desc': string;
     'features.video.label': string;

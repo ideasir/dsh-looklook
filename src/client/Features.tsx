@@ -1,8 +1,10 @@
 /**
- * LooklookFeatures: the master-switch controls inside the looklook plugin
- * card. Two slider-style switches:
- * - 识别图像 — ON enables plugin image recognition (file channel);
- * - 识别视频 — ON enables video analysis (frames + audio).
+ * LooklookFeatures: the plugin card's body:
+ * - a master switch (开启看看 / 关闭：DSH 恢复原样);
+ * - a "支持格式" grid listing every content type the plugin understands,
+ *   each with an icon;
+ * - a compact "支持视频平台" line (抖音 / B站 / YouTube / 西瓜 / 更多 yt-dlp
+ *   支持的平台).
  */
 
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
@@ -15,9 +17,9 @@ export interface FeaturesInjected {
   api: IApiClient
   /** Bound translate for the `looklook` namespace. */
   t: TranslateNS<'looklook'>
-  /** Feature controller (image / video recognition toggles). */
+  /** Feature controller (master switch). */
   features: FeatureController
-  /** Reactive snapshot of the feature switches. */
+  /** Reactive snapshot of the master switch. */
   useFeatures: () => FeatureState
 }
 
@@ -36,6 +38,19 @@ const css = {
   rowName: { fontSize: 14, lineHeight: '22px', fontWeight: 500, color: 'var(--dsw-alias-label-primary)' },
   rowDesc: { fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' },
   hint: { fontSize: 11, lineHeight: '17px', color: 'var(--dsw-alias-label-tertiary)' },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 },
+  typeCard: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '8px 10px',
+    border: '1px solid var(--dsw-alias-border-l1)',
+    borderRadius: 10,
+    background: 'var(--dsw-alias-bg-layer-1)',
+  },
+  typeIcon: { flex: 'none', display: 'grid', placeItems: 'center', color: 'var(--dsw-alias-brand-primary)', fontSize: 18 },
+  typeName: { fontSize: 12, lineHeight: '18px', fontWeight: 500 },
+  platforms: { fontSize: 11, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)', display: 'flex', flexWrap: 'wrap', gap: '2px 8px' },
 } as const
 
 /** Slider-style switch (track + knob), smooth spring motion, perfectly centered knob. */
@@ -87,47 +102,67 @@ function SliderSwitch({ checked, onChange, label }: {
   )
 }
 
-/** One switch row (slider left, label + description right). */
-function SwitchRow({ label, desc, checked, onChange }: {
-  label: string
-  desc: string
-  checked: boolean
-  onChange: (next: boolean) => void
-}) {
-  return (
-    <div style={css.row}>
-      <SliderSwitch checked={checked} onChange={onChange} label={label} />
-      <span style={css.rowText}>
-        <span style={css.rowName}>{label}</span>
-        <span style={css.rowDesc}>{desc}</span>
-      </span>
-    </div>
-  )
-}
+/** One supported content type with an emoji icon. */
+const SUPPORTED_TYPES: Array<{ icon: string; name: string }> = [
+  { icon: '🖼️', name: '图片 / 图像' },
+  { icon: '🎬', name: '视频' },
+  { icon: '🔊', name: '声音（MP3 等）' },
+  { icon: '🎨', name: 'PSD' },
+  { icon: '📄', name: 'DOC' },
+  { icon: '📊', name: 'Excel' },
+  { icon: '📽️', name: 'PPT' },
+  { icon: '📕', name: 'PDF' },
+]
 
-/** The master-switch body. */
+/** Supported video platforms (compact list under the format grid). */
+const SUPPORTED_PLATFORMS = ['抖音', 'B 站', 'YouTube', '西瓜视频', '快手', '微博视频', '优酷', '腾讯视频', '爱奇艺', '更多 yt-dlp 支持的平台']
+
+/** The plugin-card body. */
 export function LooklookFeaturesSection(props: FeaturesInjected) {
   const { t, features, useFeatures } = props
   const state = useFeatures()
   const ready = state.status === 'ready'
+  const enabled = ready && state.enabled
 
   return (
     <div style={css.stack}>
       <div style={css.section}>
         <span style={css.heading}>{t('features.switches.heading')}</span>
-        <SwitchRow
-          label={t('features.image.label')}
-          desc={t('features.image.desc')}
-          checked={ready && state.imageRecognition}
-          onChange={next => features.setImageRecognition(next)}
-        />
-        <SwitchRow
-          label={t('features.video.label')}
-          desc={t('features.video.desc')}
-          checked={ready && state.videoRecognition}
-          onChange={next => features.setVideoRecognition(next)}
-        />
-        <span style={css.hint}>{t('features.uploadHint')}</span>
+        <div style={css.row}>
+          <SliderSwitch
+            checked={enabled}
+            onChange={next => features.setEnabled(next)}
+            label={t('features.master.label')}
+          />
+          <span style={css.rowText}>
+            <span style={css.rowName}>{t('features.master.label')}</span>
+            <span style={css.rowDesc}>{t('features.master.desc')}</span>
+          </span>
+        </div>
+      </div>
+
+      <div style={css.section}>
+        <span style={css.heading}>{t('features.supported.heading')}</span>
+        <div style={css.grid}>
+          {SUPPORTED_TYPES.map(type => (
+            <div key={type.name} style={css.typeCard}>
+              <span style={css.typeIcon}>{type.icon}</span>
+              <span style={css.typeName}>{type.name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={css.section}>
+        <span style={css.heading}>{t('features.platforms.heading')}</span>
+        <div style={css.platforms}>
+          {SUPPORTED_PLATFORMS.map((platform, index) => (
+            <span key={platform}>
+              {index > 0 && <span style={{ color: 'var(--dsw-alias-border-l3)' }}> · </span>}
+              {platform}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   )

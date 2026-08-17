@@ -1,24 +1,23 @@
 /**
- * Plugin feature controller: reads the `looklook` settings namespace
- * (imageRecognition / videoRecognition master switches) through the wire
- * settings API.
+ * Plugin master-switch controller: reads the `looklook` settings namespace
+ * (`enabled`) through the wire settings API. One switch controls the whole
+ * plugin — ON (default) = every capability enabled; OFF = plugin dormant and
+ * DSH behaves as without it.
  */
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client';
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client';
-/** Feature-switch state. */
+/** Master-switch state. */
 export type FeatureState = {
     status: 'loading';
 } | {
     status: 'ready';
-    imageRecognition: boolean;
-    videoRecognition: boolean;
+    enabled: boolean;
 };
-/** Plugin feature controller: one store + load + update. */
+/** Plugin master-switch controller: one store + load + update. */
 export interface FeatureController {
     store: SnapshotStore<FeatureState>;
     load(): void;
-    setImageRecognition(next: boolean): void;
-    setVideoRecognition(next: boolean): void;
+    setEnabled(next: boolean): void;
 }
-/** Create the plugin feature controller. */
+/** Create the plugin master-switch controller. */
 export declare function createFeatureController(api: IApiClient): FeatureController;

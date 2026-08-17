@@ -163,14 +163,14 @@ export function apply(ctx: ClientContext): void {
     return controller
   }
 
-  // Feature master switches (image / video recognition).
+  // Plugin master switch (one switch controls the whole plugin).
   const features: FeatureController = createFeatureController(connection.api)
   features.load()
   const useFeaturesSnapshot = bindSnapshotSelector(features.store)
-  /** Whether the plugin's image recognition is ON (gates the eye toggle and
-   * the vision section in the settings card). */
-  const useImageRecognition = (): boolean => useFeaturesSnapshot(
-    (s: { status: string; imageRecognition?: boolean }) => s.status === 'ready' && s.imageRecognition !== false,
+  /** Whether the plugin master switch is ON (gates the eye toggle, the
+   * settings card's model sections, and every file-channel interception). */
+  const usePluginEnabled = (): boolean => useFeaturesSnapshot(
+    (s: { status: string; enabled?: boolean }) => s.status === 'ready' && s.enabled !== false,
   ) as boolean
   const useFeatures = (): import('./feature-controller.ts').FeatureState => useFeaturesSnapshot(
     (s: import('./feature-controller.ts').FeatureState) => s,
@@ -763,7 +763,7 @@ export function apply(ctx: ClientContext): void {
       asrInstall,
       envCheck,
       envRepair,
-      useImageRecognition,
+      usePluginEnabled,
     }),
   }, LooklookPluginCard))
 
@@ -785,6 +785,9 @@ export function apply(ctx: ClientContext): void {
       }
     }
     const onDropCapture = (event: DragEvent): void => {
+      // Master switch OFF → plugin dormant, DSH behaves as without it.
+      const master = features.store.getSnapshot()
+      if (master.status === 'ready' && master.enabled === false) return
       const files = [...(event.dataTransfer?.files ?? [])]
       if (files.length === 0) return
       const sessionId = sessions.currentProvideInfo.getSnapshot()?.sessionId
@@ -819,6 +822,9 @@ export function apply(ctx: ClientContext): void {
     // channel exactly like a drop.
     const onPasteCapture = (event: ClipboardEvent): void => {
       if (event.clipboardData === null) return
+      // Master switch OFF → plugin dormant, DSH behaves as without it.
+      const master = features.store.getSnapshot()
+      if (master.status === 'ready' && master.enabled === false) return
       const sessionId = sessions.currentProvideInfo.getSnapshot()?.sessionId
       if (sessionId === undefined || sessionId === '') return
       const imageFiles = [...event.clipboardData.items]
@@ -846,6 +852,9 @@ export function apply(ctx: ClientContext): void {
       const input = event.target
       if (!(input instanceof HTMLInputElement)) return
       if (input.type !== 'file') return
+      // Master switch OFF → plugin dormant, DSH behaves as without it.
+      const master = features.store.getSnapshot()
+      if (master.status === 'ready' && master.enabled === false) return
       const files = [...(input.files ?? [])]
       if (files.length === 0) return
       const sessionId = sessions.currentProvideInfo.getSnapshot()?.sessionId
@@ -894,7 +903,7 @@ export function apply(ctx: ClientContext): void {
         controller,
         useSnapshot: bindSnapshotSelector(controller.store),
         t,
-        useImageRecognition,
+        usePluginEnabled,
       }
     },
   }, VisionToggle))

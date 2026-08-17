@@ -48,6 +48,12 @@ const TMP_DIR = join(tmpdir(), 'dsh-looklook')
 /** The local ASR install root: $DSH_HOME/looklook-asr (same formula as
  * asr-install.ts) — machine-local state outside node_modules. */
 const ASR_DIR = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'looklook-asr')
+/** The plugin's isolated Python venv (created by the ASR installer). */
+const VENV_DIR = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'looklook-venv')
+/** The venv's python executable (POSIX bin/python, Windows Scripts/python.exe). */
+const VENV_PYTHON = process.platform === 'win32'
+  ? join(VENV_DIR, 'Scripts', 'python.exe')
+  : join(VENV_DIR, 'bin', 'python')
 /** The local ASR install marker file (set by the one-click installer). */
 const LOCAL_ASR_MARKER = join(ASR_DIR, 'ready')
 /** The local ASR transcribe script (written by the installer). */
@@ -97,6 +103,26 @@ const FRAME_PROMPT = '这是一段视频中的一帧画面。请描述：1) 整�
  * @param opts - worker options (frames, lang, proxy).
  * @returns the parsed worker JSON.
  */
+/**
+ * Resolve the python executable for the video worker. Prefers the plugin's
+ * ISOLATED venv (where yt-dlp lives) when it exists; falls back to a system
+ * python otherwise (worker.py still works for subtitle/frame extraction, but
+ * URL downloads need yt-dlp).
+ */
+async function resolveWorkerPython(): Promise<{ ok: boolean; command?: string; error?: string }> {
+  // Venv exists?
+  try {
+    const { access } = await import('node:fs/promises')
+    await access(VENV_PYTHON)
+    return { ok: true, command: VENV_PYTHON }
+  } catch {
+    // No venv — fall back to system python detection.
+    const pyEnv = await detectPython()
+    if (!pyEnv.ok || pyEnv.command === undefined) return { ok: false, error: pyEnv.error }
+    return { ok: true, command: pyEnv.command }
+  }
+}
+
 function runWorker(
   source: string,
   opts: Record<string, unknown>,
@@ -108,7 +134,7 @@ function runWorker(
     // worker's fixed frame/file names (P1: cross-session frame theft).
     const callDir = join(TMP_DIR, `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`)
     void mkdir(callDir, { recursive: true }).catch(() => {})
-    void detectPython().then((pyEnv) => {
+    void resolveWorkerPython().then((pyEnv) => {
       if (!pyEnv.ok || pyEnv.command === undefined) {
         rejectBody(new Error(pyEnv.error ?? '未找到可用的 Python 运行时'))
         return
@@ -373,14 +399,12 @@ async function audioLocal(
   wavPath: string,
   signal: AbortSignal,
 ): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
-  const pyEnv = await detectPython()
-  if (!pyEnv.ok || pyEnv.command === undefined) {
-    return { ok: false, error: pyEnv.error ?? '未找到可用的 Python 运行时' }
-  }
-  const pythonCmd: string = pyEnv.command
+  // Run with the ISOLATED venv python (faster-whisper lives there), never the
+  // system python. If the venv is missing, the ASR install was not completed.
+  const venvPy = VENV_PYTHON
   return new Promise((resolveBody) => {
     const script = LOCAL_ASR_SCRIPT
-    const child = spawn(pythonCmd, [script, wavPath], {
+    const child = spawn(venvPy, [script, wavPath], {
       env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
       stdio: ['ignore', 'pipe', 'pipe'],
     }) as import('node:child_process').ChildProcessByStdio<null, import('node:stream').Readable, import('node:stream').Readable>
@@ -664,14 +688,10 @@ export async function watchVideo(
   ctx: Context,
   audioScope: AudioScope,
   visionScope: VisionScope,
-  videoRecognitionEnabled: () => boolean,
   source: string,
   question: string,
   signal: AbortSignal,
 ): Promise<string> {
-  if (!videoRecognitionEnabled()) {
-    return '视频识别已关闭：请在插件设置中开启「识别视频」后使用。'
-  }
   if (source === '') return '看视频失败：缺少 source 参数（视频文件路径或链接）'
   const isUrl = /^https?:\/\//.test(source)
   try {

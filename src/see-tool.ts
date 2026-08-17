@@ -17,7 +17,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Context } from '@deepseek-ai/cordis'
 import type { AudioScope, LooklookScope, VisionScope } from './settings.ts'
-import { looklookFeatures } from './settings.ts'
+import { looklookEnabled } from './settings.ts'
 import { describeImageFile } from './describe-tool.ts'
 import { watchVideo } from './video-tool.ts'
 import { readDocumentFile, isDocumentPath } from './doc-tool.ts'
@@ -87,11 +87,10 @@ export function registerSeeTool(
   visionScope: VisionScope,
   audioScope: AudioScope,
   features: LooklookScope,
-  videoRecognitionEnabled: () => boolean,
 ): void {
   ctx.tools.register(defineTool({
     name: 'looklook_see',
-    description: '查看并理解任何内容（图片、视频、压缩包、文档）并回答关于它的问题。source 填内容来源：用户消息里的图片引用（原样复制）、本地图片/视频/压缩包/文档文件路径、或视频链接；question 填你要询问的问题（用户问什么就针对性地问什么）。图片内容对模型不可见，调用本工具是看到的唯一方式。',
+    description: '查看并理解任何内容（图片、视频、压缩包、文档）并回答关于它的问题。source 填内容来源：用户消息里的文件路径、图片引用（原样复制）、本地图片/视频/压缩包/文档文件路径、或视频链接；question 填你要询问的问题（用户问什么就针对性地问什么）。图片内容对模型不可见，调用本工具是看到的唯一方式。',
     parameters: {
       source: {
         type: 'string',
@@ -121,6 +120,10 @@ export function registerSeeTool(
     async execute(args: { source?: unknown; question?: unknown }, exec) {
       const source = typeof args.source === 'string' && args.source.trim() !== '' ? args.source.trim() : ''
       if (source === '') return { text: '看内容失败：缺少 source 参数' }
+      // Master switch: OFF = plugin dormant, everything answers "已关闭".
+      if (!looklookEnabled(features)) {
+        return { text: '看看插件已关闭：请在「插件配置 → 看看」里开启总开关后再使用。' }
+      }
       const question = typeof args.question === 'string' && args.question.trim() !== ''
         ? args.question.trim()
         : '请描述这个内容。'
@@ -128,15 +131,12 @@ export function registerSeeTool(
 
       switch (kind) {
         case 'image-file': {
-          if (!looklookFeatures(features).imageRecognition) {
-            return { text: '图像识别已关闭：请在插件设置中开启「识别图像」后再使用。' }
-          }
           const cwd = exec.agent?.session.header.cwd
           return { text: await describeImageFile(ctx, visionScope, source, question, exec.signal, cwd) }
         }
         case 'video-file':
         case 'video-url': {
-          return { text: await watchVideo(ctx, audioScope, visionScope, videoRecognitionEnabled, source, question, exec.signal) }
+          return { text: await watchVideo(ctx, audioScope, visionScope, source, question, exec.signal) }
         }
         case 'zip': {
           return { text: await listZip(source, question) }

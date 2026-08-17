@@ -6,9 +6,12 @@
  * shipped in the tarball and never wiped by a package reinstall). Install
  * steps:
  *   1. env check: python3 + ffmpeg present;
- *   2. pip install faster-whisper (system packages allowed — PEP 668);
- *   3. download the model (medium) via HF mirror;
- *   4. write transcribe.py + a `ready` marker.
+ *   2. create an ISOLATED venv at `<dshHome>/looklook-venv` so nothing
+ *      touches the system Python;
+ *   3. pip install faster-whisper INTO the venv;
+ *   4. download the model (medium) via HF mirror;
+ *   5. write transcribe.py + a `ready` marker (transcribe.py runs with the
+ *      venv's own python).
  *
  * The trigger/status are exposed as Remote RPCs on `remote.looklook`
  * (asrStatus / asrInstall) — no unauth'd HTTP routes.
@@ -28,6 +31,8 @@ import { detectPython } from './python-env.ts'
  */
 const DSH_HOME = process.env.DSH_HOME ?? join(homedir(), '.dsh')
 const ASR_DIR = join(DSH_HOME, 'looklook-asr')
+/** The isolated Python venv for the plugin's packages (ASR + yt-dlp). */
+export const VENV_DIR = join(DSH_HOME, 'looklook-venv')
 /** The ready marker: written only after a successful install. */
 const READY_MARKER = join(ASR_DIR, 'ready')
 /** The transcribe wrapper script (invoked by the video tool). */
@@ -40,6 +45,24 @@ export type AsrInstallPhase = 'none' | 'checking' | 'installing-deps' | 'downloa
 
 /** In-memory install progress (single installer at a time). */
 let installState: { phase: AsrInstallPhase; error?: string } = { phase: 'none' }
+
+/**
+ * Create (once) the plugin's isolated venv and return its python executable.
+ * POSIX: <venv>/bin/python ; Windows: <venv>/Scripts/python.exe.
+ * Returns undefined when the venv cannot be created.
+ */
+export async function ensureVenv(basePython: string, venvDir: string): Promise<string | undefined> {
+  const venvPy = process.platform === 'win32'
+    ? join(venvDir, 'Scripts', 'python.exe')
+    : join(venvDir, 'bin', 'python')
+  // Already exists and runs?
+  const existing = await run(venvPy, ['--version'])
+  if (existing.ok) return venvPy
+  const created = await run(basePython, ['-m', 'venv', venvDir], 120_000)
+  if (!created.ok) return undefined
+  const check = await run(venvPy, ['--version'])
+  return check.ok ? venvPy : undefined
+}
 
 /** Whether the local ASR install is complete (ready marker exists). */
 export async function localAsrReady(): Promise<boolean> {
@@ -107,22 +130,27 @@ export async function performInstall(): Promise<void> {
     if (!ff.ok) throw new Error('ffmpeg 不可用，请先安装 ffmpeg')
     await mkdir(ASR_DIR, { recursive: true })
 
-    // 2) deps (use the same Python's pip module — `pip3` may not exist when
-    //    only `python`/`py` does).
+    // 2) Create an ISOLATED venv (<dshHome>/looklook-venv) so the plugin's
+    //    Python packages never touch the system Python and a reinstall or
+    //    uninstall leaves nothing behind. No --break-system-packages needed.
     installState = { phase: 'installing-deps' }
-    const pip = await run(pythonCmd, ['-m', 'pip', 'install', '--break-system-packages', '-q', 'faster-whisper'], 600_000)
+    const venvPy = await ensureVenv(pythonCmd, VENV_DIR)
+    if (venvPy === undefined) throw new Error('创建隔离 Python 环境失败')
+
+    // 3) deps inside the venv.
+    const pip = await run(venvPy, ['-m', 'pip', 'install', '-q', '--disable-pip-version-check', 'faster-whisper'], 600_000)
     if (!pip.ok) throw new Error(`faster-whisper 安装失败：${pip.stderr}`)
 
-    // 3) model download (probe once so the model is cached)
+    // 4) model download (probe once so the model is cached)
     installState = { phase: 'downloading-model' }
     const probeCode = `from faster_whisper import WhisperModel; WhisperModel(${JSON.stringify(LOCAL_ASR_MODEL)}, device="cpu", compute_type="int8")`
-    const probe = await run(pythonCmd, ['-c', probeCode], 1_800_000)
+    const probe = await run(venvPy, ['-c', probeCode], 1_800_000)
     if (!probe.ok) throw new Error(`模型下载失败：${probe.stderr}`)
 
-    // 4) write wrapper + marker
+    // 5) write wrapper + marker (records the venv python)
     installState = { phase: 'writing' }
     await writeFile(TRANSCRIBE_SCRIPT, transcribeScript(), 'utf8')
-    await writeFile(READY_MARKER, `model=${LOCAL_ASR_MODEL}\n`, 'utf8')
+    await writeFile(READY_MARKER, `model=${LOCAL_ASR_MODEL}\nvenv=${VENV_DIR}\n`, 'utf8')
     installState = { phase: 'done' }
   } catch (error) {
     installState = { phase: 'failed', error: error instanceof Error ? error.message : String(error) }

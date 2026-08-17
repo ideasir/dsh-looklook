@@ -14,8 +14,8 @@ export interface VisionToggleInjected {
     useSnapshot: (selector: (state: EyeController['store']['getSnapshot'] extends () => infer S ? S : never) => unknown) => unknown;
     /** Bound translate for the `looklook` namespace. */
     t: TranslateNS<'looklook'>;
-    /** Reactive image recognition master switch (false hides the eye entirely). */
-    useImageRecognition: () => boolean;
+    /** Reactive plugin master switch (false hides the eye entirely). */
+    usePluginEnabled: () => boolean;
 }
 /** The active/inactive/warning rendering states. */
 export type EyeVisualState = 'on' | 'off' | 'unconfigured';

@@ -1,30 +1,40 @@
 /**
- * dsh-looklook settings: model configurations and feature switches.
+ * dsh-looklook settings: the plugin master switch and model configurations.
  *
- * Three OpenAI-compatible model slots drive every "look" capability:
- * - vision: 识别图像/视频画面（视频识别 = 抽帧成图，共用此模型）
- * - audio:  音频理解——对白转写 + 声音理解（L2+L3 合并为一个配置，
- *           插件按模型能力自动分级使用，无需用户标注能力等级）
+ * One OpenAI-compatible vision model slot drives image/video-frame
+ * recognition; one audio slot drives transcript + sound understanding
+ * (L2+L3 merged — the plugin probes the model's capability automatically).
  *
- * Feature switches:
- * - imageRecognition: 插件是否介入图像识别（OFF = 交给大模型自身多模态能力）
- * - videoRecognition: 插件是否介入视频识别（OFF = 仅保存文件，不分析）
- * - 上传扩展名无开关：装上插件即支持全部扩展名上传
+ * The master switch (`looklook.enabled`):
+ * - ON (default): every capability works.
+ * - OFF: plugin dormant, DSH behaves as without it (not uninstalled).
+ *
+ * 上传扩展名无开关：装上插件即支持全部扩展名上传
  */
 import Schema from '@deepseek-ai/schemastery';
 import type { SettingsScope } from '@deepseek-ai/dsh-settings';
-/** Plugin-level feature switches shown in the settings page. */
+/**
+ * Plugin-level master switch. One switch controls the whole plugin:
+ * - ON (default): every capability is enabled — image/video/file recognition
+ *   through the file channel, the looklook_see tool, upload channel, ASR.
+ * - OFF: the plugin is NOT uninstalled but is dormant — nothing is
+ *   intercepted, the see tool answers "已关闭", and DSH behaves exactly as
+ *   if the plugin were absent.
+ *
+ * Rationale: this plugin exists to give TEXT-ONLY models vision/audio. A
+ * user whose model is already multi-modal does not need it at all, so there
+ * is no point in per-feature toggles (识别图像 / 识别视频) — either the
+ * plugin helps (ON) or the harness is left pristine (OFF).
+ */
 export interface LooklookSettings {
-    /** Plugin image recognition: OFF = use the main model's own multimodal. */
-    imageRecognition: boolean;
-    /** Plugin video recognition: OFF = files saved only, never analyzed. */
-    videoRecognition: boolean;
+    /** Master switch: OFF = plugin dormant, DSH behaves as without it. */
+    enabled: boolean;
 }
 export declare const LooklookConfig: Schema<LooklookSettings>;
-/** The settings owner handle for the feature toggles. */
+/** The settings owner handle for the master switch. */
 export type LooklookScope = SettingsScope<LooklookSettings>;
-/** Resolve the live feature switches. */
-export declare function looklookFeatures(scope: LooklookScope): LooklookSettings;
+/** Resolve the live master switch (missing value defaults to enabled). */
+export declare function looklookEnabled(scope: LooklookScope): boolean;
 /** One vision provider (an OpenAI-compatible chat-completions endpoint). */
 export interface VisionProviderConfig {
     /** Stable unique id for this provider entry. */

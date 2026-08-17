@@ -36,8 +36,8 @@ export interface LooklookCardInjected {
     envCheck: () => Promise<EnvCheckReport>;
     /** One-click repair for one env item. */
     envRepair: (action: 'install-yt-dlp' | 'install-asr') => Promise<EnvCheckItem>;
-    /** Reactive snapshot of the image recognition master switch. */
-    useImageRecognition: () => boolean;
+    /** Reactive plugin master switch (gates the model sections). */
+    usePluginEnabled: () => boolean;
 }
 /** The plugin-configuration card body. */
 export declare function LooklookPluginCard(props: LooklookCardInjected): import("react").JSX.Element;

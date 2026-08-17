@@ -16,8 +16,8 @@ export interface VisionToggleInjected {
   useSnapshot: (selector: (state: EyeController['store']['getSnapshot'] extends () => infer S ? S : never) => unknown) => unknown
   /** Bound translate for the `looklook` namespace. */
   t: TranslateNS<'looklook'>
-  /** Reactive image recognition master switch (false hides the eye entirely). */
-  useImageRecognition: () => boolean
+  /** Reactive plugin master switch (false hides the eye entirely). */
+  usePluginEnabled: () => boolean
 }
 
 /** The active/inactive/warning rendering states. */
@@ -54,12 +54,12 @@ function EyeGlyph({ off, warning }: { off: boolean; warning: boolean }) {
 export function VisionToggle(
   props: VisionToggleInjected,
 ) {
-  const { controller, useSnapshot, useImageRecognition, t } = props
+  const { controller, useSnapshot, usePluginEnabled, t } = props
   // Both hooks run on every render so the hook order stays stable.
-  const imageRecognitionOn = useImageRecognition()
+  const pluginEnabled = usePluginEnabled()
   const state = useSnapshot((s: { status: string; eye?: 'on' | 'off'; unconfigured?: boolean }) => s) as
     { status: 'loading' | 'ready'; eye: 'on' | 'off'; unconfigured: boolean }
-  if (!imageRecognitionOn) return null
+  if (!pluginEnabled) return null
   const eye = state.status === 'ready' ? state.eye : 'on'
   const unconfigured = state.status === 'ready' && state.unconfigured === true
   const visual = eyeVisualState(state.status, eye, unconfigured)

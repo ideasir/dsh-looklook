@@ -28,4 +28,4 @@ import type { AudioScope, VisionScope } from './settings.ts';
  * the unified looklook_see tool.
  * @returns the composed report text (or a failure message).
  */
-export declare function watchVideo(ctx: Context, audioScope: AudioScope, visionScope: VisionScope, videoRecognitionEnabled: () => boolean, source: string, question: string, signal: AbortSignal): Promise<string>;
+export declare function watchVideo(ctx: Context, audioScope: AudioScope, visionScope: VisionScope, source: string, question: string, signal: AbortSignal): Promise<string>;
