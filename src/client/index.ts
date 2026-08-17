@@ -68,11 +68,16 @@ export function apply(ctx: ClientContext): void {
   const usePending = bindSnapshotSelector(pending.store)
 
   /** Compose the model-facing + client-rendering notes for one staged file. */
+  const fileTypeLabel = (name: string): string => {
+    const ext = name.toLowerCase().split('.').pop() ?? ''
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'].includes(ext)) return '图片'
+    if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'].includes(ext)) return '视频'
+    if (['zip', '7z', 'rar', 'tar', 'gz'].includes(ext)) return '压缩包'
+    if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'psd', 'txt'].includes(ext)) return '文档'
+    return '文件'
+  }
   const fileNote = (f: { name: string; path?: string; size: number }): string => {
-    const path = f.path ?? ''
-    const visible = t('upload.message', { name: f.name, path })
-    const meta = JSON.stringify({ name: f.name, path, size: f.size })
-    return `【looklook:开始】${visible}【looklook:结束】\n【looklook:file】${meta}【looklook:file】`
+    return `[${fileTypeLabel(f.name)}]${f.name} 排队中...`
   }
 
   /**
@@ -608,10 +613,16 @@ export function apply(ctx: ClientContext): void {
         const id = controller.get(sessionId)[controller.get(sessionId).length - 1]?.id
         if (id === undefined) continue
         try {
-          const { path } = await uploadFileRpc(sessionId, file, (percent) => {
+          const { path, name } = await uploadFileRpc(sessionId, file, (percent) => {
             controller.updateById(sessionId, id, { progress: percent })
           })
-          controller.updateById(sessionId, id, { path, uploading: false, progress: 100, error: undefined })
+          controller.updateById(sessionId, id, {
+            path,
+            ...(name !== undefined ? { name } : {}),
+            uploading: false,
+            progress: 100,
+            error: undefined,
+          })
         } catch (error) {
           console.error('looklook upload failed:', file.name, error)
           controller.updateById(sessionId, id, {

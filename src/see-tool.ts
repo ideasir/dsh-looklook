@@ -118,7 +118,7 @@ export function registerSeeTool(
     },
     isConcurrencySafe: () => false,
     async execute(args: { source?: unknown; question?: unknown }, exec) {
-      const source = typeof args.source === 'string' && args.source.trim() !== '' ? args.source.trim() : ''
+      let source = typeof args.source === 'string' && args.source.trim() !== '' ? args.source.trim() : ''
       if (source === '') return { text: '看内容失败：缺少 source 参数' }
       // Master switch: OFF = plugin dormant, everything answers "已关闭".
       if (!looklookEnabled(features)) {
@@ -127,6 +127,22 @@ export function registerSeeTool(
       const question = typeof args.question === 'string' && args.question.trim() !== ''
         ? args.question.trim()
         : '请描述这个内容。'
+      // Bare file name (no path separators / not a URL / not a legacy ref):
+      // the file channel uploads user files into the session `.uploads/`, and
+      // the note now carries only the clean unique name. Resolve it against
+      // that directory so the model can call looklook_see("xxx.png", q).
+      if (!/^https?:\/\//i.test(source)
+        && !source.includes('/')
+        && !source.includes('\\')
+        && !/^\s*\{/.test(source)
+        && !/^[a-f0-9]{8,}$/.test(source.trim())
+        && !/^sha256:[a-f0-9]{8,}$/i.test(source.trim())) {
+        const execCwd = exec.agent?.session.header.cwd
+        if (execCwd !== undefined && execCwd !== '') {
+          const resolved = `${execCwd}/.uploads/${source}`
+          source = resolved
+        }
+      }
       const kind = classifySource(source)
 
       switch (kind) {

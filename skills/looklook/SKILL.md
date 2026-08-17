@@ -13,7 +13,7 @@ Call `looklook_see` when the user asks to inspect, understand, identify, summari
 - PPT/PDF/Word/Excel files.
 
 ## Parameters
-- `source`: copy the original file path, image reference, or video URL from the user message. Do not invent or rewrite paths.
+- `source`: copy the original file path, image reference, or video URL from the user message. Do not invent or rewrite paths. When the user message says 「上传了文件：xxx.png」, pass `xxx.png` as `source` — Look Look resolves the file name against the session's upload directory automatically.
 - `question`: use the user's actual question. Ask a focused question rather than requesting an unrelated full description.
 
 ## Important priority rule

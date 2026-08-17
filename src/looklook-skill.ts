@@ -10,7 +10,7 @@ Look Look 已内置图片、视频、zip、PSD、PPT/PDF/Word/Excel 的读取与
 ### 调用规则
 - 用户要求查看、识别、分析上述内容时，优先直接调用 looklook_see(source, question)。
 - 不要先调用 npm/pip，不要下载 psd.js、yt-dlp 或其他解析依赖；Look Look 已处理这些能力。
-- source 使用用户消息中的原始文件路径、图片引用或原始视频 URL，不要猜测或改写路径。
+- source 使用用户消息中的原始文件路径、图片引用或原始视频 URL，不要猜测或改写路径。当用户消息里说「[类型]xxx.png」或「上传了文件」时，直接用里面的文件名作为 source（如 "image_abc123.png"）即可——Look Look 会自动去会话的 .uploads/ 目录找到文件。
 - question 使用用户的实际问题，针对性提问；不要无条件要求全量描述。
 - 工具返回失败后才能解释失败原因；没有工具结果时不要声称已经看到了内容。
 
