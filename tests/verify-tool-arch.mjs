@@ -1,5 +1,6 @@
 import { buildImageToolReference, imageMarker, rewriteImagesToToolReferences, replaceImagesWithPlaceholder } from "../lib/translate.js";
 import { apply } from "../lib/index.js";
+import { readFileSync } from "node:fs";
 
 // 1) tool reference text: hidden wrapper + marker
 const image = { type: "image", attachment: { attachmentId: "sha256:abc", mediaType: "image/png", bytes: 100, width: 10, height: 10 } };
@@ -67,5 +68,9 @@ if (names.length !== 2 || !names.includes("looklook_see") || !names.includes("pr
 }
 if (prompts.length < 1) throw new Error("system prompts missing");
 if (providers.length !== 0) throw new Error(`plugin settings leaked into configurable providers: ${providers.length}`);
+const clientSource = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+if (!clientSource.includes("const hasNonImage = files.some(file => isUploadableName(file.name))")) throw new Error("file picker does not route non-images");
+if (!clientSource.includes("void stageUploads(sessionId, files, pending)")) throw new Error("file picker does not stage selected files");
+console.log("FILE PICKER NON-IMAGE ROUTING: OK");
 console.log("NO EVENT HANDLERS: OK (zero patch footprint)");
 console.log("ALL TOOL-ARCH TESTS PASS");

@@ -937,8 +937,8 @@ export function apply(ctx: ClientContext): void {
 
     // "+ 按钮" file picker: the picker commits through an <input type=file>
     // change event. Intercept in CAPTURE so image picks never reach the
-    // native intake; only when the session routes images through the file
-    // channel. Non-image picks (if any) are left to native.
+    // native intake for image-only picks when the session is natively
+    // multimodal. Non-image picks must always use Look Look's file channel.
     const onChangeCapture = (event: Event): void => {
       const input = event.target
       if (!(input instanceof HTMLInputElement)) return
@@ -950,17 +950,18 @@ export function apply(ctx: ClientContext): void {
       if (files.length === 0) return
       const sessionId = sessions.currentProvideInfo.getSnapshot()?.sessionId
       if (sessionId === undefined || sessionId === '') return
-      const imageFiles = files.filter(file => isNativeImageName(file.name) || file.type.startsWith('image/'))
-      if (imageFiles.length === 0) return
-      const eye = eyeFor(sessionId).store.getSnapshot()
-      if (eye.status === 'ready' && eye.eye === 'off') return
-      const supportsImage = cachedSupportsImage(sessionId)
-      if (supportsImage === true) return
+      const hasNonImage = files.some(file => isUploadableName(file.name))
+      if (!hasNonImage) {
+        const eye = eyeFor(sessionId).store.getSnapshot()
+        if (eye.status === 'ready' && eye.eye === 'off') return
+        const supportsImage = cachedSupportsImage(sessionId)
+        if (supportsImage === true) return
+      }
       event.preventDefault()
       event.stopPropagation()
       // Clear the picker so the same file can be chosen again.
       input.value = ''
-      void stageUploads(sessionId, imageFiles, pending)
+      void stageUploads(sessionId, files, pending)
     }
     document.addEventListener('change', onChangeCapture, true)
 

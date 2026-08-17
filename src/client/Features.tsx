@@ -106,7 +106,7 @@ function SliderSwitch({ checked, onChange, label }: {
 const SUPPORTED_TYPES: Array<{ icon: string; name: string }> = [
   { icon: '🖼️', name: '图片 / 图像' },
   { icon: '🎬', name: '视频' },
-  { icon: '🔊', name: '声音（MP3 等）' },
+  { icon: '🔊', name: '声音' },
   { icon: '🎨', name: 'PSD' },
   { icon: '📄', name: 'DOC' },
   { icon: '📊', name: 'Excel' },
