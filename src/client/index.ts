@@ -63,6 +63,50 @@ export function apply(ctx: ClientContext): void {
     scope?(id: string): { get?(name: string): unknown } | undefined
   }
 
+  // ── Session sharing ──────────────────────────────────────────
+  // The sidebar 3-dot menu already has a "Share session…" item that calls
+  // window.__dshShareSession?.(sessionId, title).  Register it so the user
+  // can copy a session reference (dsh-session:// URI + title) to the
+  // clipboard and paste it into another session for analysis.
+  // The "标题:" prefix on the title line prevents the Agent from treating
+  // the session title as a command — it is clearly metadata.
+  if (typeof window !== 'undefined') {
+    ctx.effect(() => {
+      const win = window as unknown as Record<string, unknown>
+      win.__dshShareSession = (sessionId: string, title: string | undefined) => {
+        const ref = 'dsh-session://' + sessionId
+        const text = title ? `dsh-session://${sessionId}\n标题: ${title}` : ref
+        void navigator.clipboard?.writeText?.(text).catch(() => {
+          // Fallback for older browsers / non-HTTPS.
+          const ta = document.createElement('textarea')
+          ta.value = text
+          ta.style.cssText = 'position:fixed;left:-9999px'
+          document.body.appendChild(ta)
+          ta.select()
+          try { document.execCommand('copy') } catch { /* ignore */ }
+          document.body.removeChild(ta)
+        })
+        // Brief toast feedback.
+        const el = document.createElement('div')
+        el.textContent = '✅ 已复制会话引用（dsh-session://），可粘贴到其他对话'
+        el.style.cssText = [
+          'position:fixed', 'bottom:24px', 'left:50%', 'transform:translateX(-50%)',
+          'z-index:99999', 'background:var(--dsw-alias-bg-base,#1a1a2e)',
+          'color:var(--dsw-alias-label-primary,#e0e0e0)',
+          'border:1px solid var(--dsw-alias-border-l2,#333)',
+          'border-radius:10px', 'padding:10px 20px', 'font-size:14px',
+          'box-shadow:0 4px 16px rgba(0,0,0,0.3)', 'max-width:80vw',
+          'text-align:center', 'word-break:break-all',
+          'transition:opacity .25s',
+        ].join(';')
+        document.body.appendChild(el)
+        setTimeout(() => { el.style.opacity = '0' }, 2200)
+        setTimeout(() => { document.body.removeChild(el) }, 2700)
+      }
+      return () => { delete win.__dshShareSession }
+    }, 'dsh-looklook: session share global')
+  }
+
   // Pending staged files (uploaded, waiting for the user to press Enter).
   const pending: PendingFilesController = createPendingFilesController()
   const usePending = bindSnapshotSelector(pending.store)
