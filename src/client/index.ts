@@ -23,7 +23,7 @@ import { LooklookUserMessageNodeView } from './UserMessageNodeView.tsx'
 import { LooklookPluginCard, type LooklookCardInjected } from './PluginTab.tsx'
 import { VisionToggle, type VisionToggleInjected } from './VisionToggle.tsx'
 import { FileChips, type FileChipsInjected } from './FileChips.tsx'
-import { isUploadableName, uploadFile, type SessionModality } from './upload-shared.ts'
+import { isUploadableName, isNativeImageName, uploadFile, type SessionModality, type EnvCheckItem, type EnvCheckReport } from './upload-shared.ts'
 import { en, zh, type LookLookKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -296,6 +296,31 @@ export function apply(ctx: ClientContext): void {
     throw new Error('result must be { ok: true, mediaType, data } or { ok: false, error }')
   }
 
+  /** Loose wire schema: pass the business object through unchanged (the host
+   * shapes are validated by the caller-side wrappers). */
+  const parseAsIs = (value: unknown): unknown => value
+
+  /** Strict wire schema for the env-repair action. */
+  const parseEnvRepairAction = (value: unknown): 'install-yt-dlp' | 'install-asr' => {
+    if (value === 'install-yt-dlp' || value === 'install-asr') return value
+    throw new Error('action must be install-yt-dlp or install-asr')
+  }
+
+  /** Strict wire schema for the test-provider probe. */
+  const parseTestProvider = (value: unknown): { baseURL: string; apiKeyEnv: string; model: string; apiKey?: string } => {
+    if (typeof value !== 'object' || value === null) throw new Error('provider must be an object')
+    const record = value as Record<string, unknown>
+    if (typeof record.baseURL !== 'string' || typeof record.apiKeyEnv !== 'string' || typeof record.model !== 'string') {
+      throw new Error('provider requires baseURL, apiKeyEnv and model strings')
+    }
+    return {
+      baseURL: record.baseURL,
+      apiKeyEnv: record.apiKeyEnv,
+      model: record.model,
+      ...typeof record.apiKey === 'string' ? { apiKey: record.apiKey } : {},
+    }
+  }
+
   // Model-discovery + upload + ASR RPCs: mount the `remote.looklook`
   // namespace backed by the host LooklookRemoteService. Every method rides
   // the authorized connection (no unauth'd HTTP routes).
@@ -377,6 +402,57 @@ export function apply(ctx: ClientContext): void {
           }],
           result: { mode: 'strict', typeSymbol: 'LooklookReadUploadResult', schema: { parse: parseReadUploadResult } },
         },
+        {
+          id: 'looklook.envCheck',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'envCheck',
+          invocation: { kind: 'direct' },
+          parameters: [],
+          result: { mode: 'strict', typeSymbol: 'LooklookEnvCheckReport', schema: { parse: parseAsIs } },
+        },
+        {
+          id: 'looklook.envRepair',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'envRepair',
+          invocation: { kind: 'direct' },
+          parameters: [{
+            name: 'action',
+            wire: 'action',
+            source: 'json',
+            codec: { mode: 'strict', typeSymbol: 'EnvRepairAction', schema: { parse: parseEnvRepairAction } },
+          }],
+          result: { mode: 'strict', typeSymbol: 'LooklookEnvCheckItem', schema: { parse: parseAsIs } },
+        },
+        {
+          id: 'looklook.testVision',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'testVision',
+          invocation: { kind: 'direct' },
+          parameters: [{
+            name: 'provider',
+            wire: 'provider',
+            source: 'json',
+            codec: { mode: 'strict', typeSymbol: 'TestProviderProbe', schema: { parse: parseTestProvider } },
+          }],
+          result: { mode: 'strict', typeSymbol: 'LooklookTestVisionResult', schema: { parse: parseAsIs } },
+        },
+        {
+          id: 'looklook.testAudio',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'testAudio',
+          invocation: { kind: 'direct' },
+          parameters: [{
+            name: 'provider',
+            wire: 'provider',
+            source: 'json',
+            codec: { mode: 'strict', typeSymbol: 'TestProviderProbe', schema: { parse: parseTestProvider } },
+          }],
+          result: { mode: 'strict', typeSymbol: 'LooklookTestAudioResult', schema: { parse: parseAsIs } },
+        },
       ],
     })
     return () => { void mounting.then(dispose => dispose()) }
@@ -427,6 +503,36 @@ export function apply(ctx: ClientContext): void {
       >
     } | undefined
     return await uploadFile(remote, sessionId, file, onProgress)
+  }
+
+  /**
+   * Upload a batch of files through the file channel (used by drop, paste,
+   * and the + button picker). Each file becomes an immediate pending chip
+   * (spinner + progress); the path lands when the RPC completes, and nothing
+   * is sent until the user presses Enter. Failed uploads keep their chip with
+   * the error visible.
+   */
+  const stageUploads = (sessionId: string, files: File[], controller: PendingFilesController): void => {
+    void (async () => {
+      for (const file of files) {
+        const staged = { name: file.name, size: file.size, uploading: true, progress: 0 }
+        controller.add(sessionId, staged)
+        const id = controller.get(sessionId)[controller.get(sessionId).length - 1]?.id
+        if (id === undefined) continue
+        try {
+          const { path } = await uploadFileRpc(sessionId, file, (percent) => {
+            controller.updateById(sessionId, id, { progress: percent })
+          })
+          controller.updateById(sessionId, id, { path, uploading: false, progress: 100, error: undefined })
+        } catch (error) {
+          console.error('looklook upload failed:', file.name, error)
+          controller.updateById(sessionId, id, {
+            uploading: false,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+      }
+    })()
   }
 
   /** Ask the host whether the session's current model accepts image input. */
@@ -488,6 +594,112 @@ export function apply(ctx: ClientContext): void {
     return { ok: false, error: typeof business?.error === 'string' ? business.error : 'ASR 安装失败' }
   }
 
+  /** Run the environment self-check (settings dialog). */
+  const envCheck = async (): Promise<EnvCheckReport> => {
+    const remote = ctx.get('remote.looklook') as {
+      envCheck?: () => Promise<
+        { ok: boolean; value?: EnvCheckReport; error?: { message?: string } }
+      >
+    } | undefined
+    if (remote?.envCheck === undefined) throw new Error('环境检测服务未就绪')
+    const envelope = await remote.envCheck()
+    if (!envelope.ok) {
+      throw new Error(
+        typeof envelope.error === 'string'
+          ? envelope.error
+          : envelope.error?.message ?? '环境检测失败',
+      )
+    }
+    const report = envelope.value
+    if (report === undefined) throw new Error('环境检测失败')
+    return report
+  }
+
+  /** One-click repair for one env item; returns the item's fresh state. */
+  const envRepair = async (action: 'install-yt-dlp' | 'install-asr'): Promise<EnvCheckItem> => {
+    const remote = ctx.get('remote.looklook') as {
+      envRepair?: (action: string) => Promise<
+        { ok: boolean; value?: EnvCheckItem; error?: { message?: string } }
+      >
+    } | undefined
+    if (remote?.envRepair === undefined) throw new Error('修复服务未就绪')
+    const envelope = await remote.envRepair(action)
+    if (!envelope.ok) {
+      throw new Error(
+        typeof envelope.error === 'string'
+          ? envelope.error
+          : envelope.error?.message ?? '修复失败',
+      )
+    }
+    const item = envelope.value
+    if (item === undefined) throw new Error('修复失败')
+    return item
+  }
+
+  /** Probe whether one vision provider can actually see images. */
+  const testVision = async (provider: {
+    baseURL: string
+    apiKeyEnv: string
+    apiKey?: string
+    model: string
+  }): Promise<{ ok: true; supportsImage: boolean; message: string } | { ok: false; error: string }> => {
+    const remote = ctx.get('remote.looklook') as {
+      testVision?: (p: {
+        baseURL: string
+        apiKeyEnv: string
+        apiKey?: string
+        model: string
+      }) => Promise<
+        { ok: boolean; value?: { ok: boolean; supportsImage: boolean; message: string; error?: string }; error?: { message?: string } }
+      >
+    } | undefined
+    if (remote?.testVision === undefined) return { ok: false, error: '测试服务未就绪' }
+    const envelope = await remote.testVision(provider)
+    if (!envelope.ok) {
+      return {
+        ok: false,
+        error: typeof envelope.error === 'string'
+          ? envelope.error
+          : envelope.error?.message ?? '测试失败',
+      }
+    }
+    const business = envelope.value
+    if (business?.ok === true) return { ok: true, supportsImage: business.supportsImage === true, message: business.message ?? '' }
+    return { ok: false, error: typeof business?.error === 'string' ? business.error : '测试失败' }
+  }
+
+  /** Probe one audio provider's capability level (L1/L2/none). */
+  const testAudio = async (provider: {
+    baseURL: string
+    apiKeyEnv: string
+    apiKey?: string
+    model: string
+  }): Promise<{ ok: true; level: 'L1' | 'L2' | 'none'; message: string } | { ok: false; error: string }> => {
+    const remote = ctx.get('remote.looklook') as {
+      testAudio?: (p: {
+        baseURL: string
+        apiKeyEnv: string
+        apiKey?: string
+        model: string
+      }) => Promise<
+        { ok: boolean; value?: { ok: boolean; level: 'L1' | 'L2' | 'none'; message: string; error?: string }; error?: { message?: string } }
+      >
+    } | undefined
+    if (remote?.testAudio === undefined) return { ok: false, error: '测试服务未就绪' }
+    const envelope = await remote.testAudio(provider)
+    if (!envelope.ok) {
+      return {
+        ok: false,
+        error: typeof envelope.error === 'string'
+          ? envelope.error
+          : envelope.error?.message ?? '测试失败',
+      }
+    }
+    const business = envelope.value
+    if (business?.ok === true) return { ok: true, level: business.level ?? 'none', message: business.message ?? '' }
+    return { ok: false, error: typeof business?.error === 'string' ? business.error : '测试失败' }
+  }
+
   // Modality cache: sessionId → supportsImage. Refreshed on session change
   // and whenever settings change (a model switch does not change the session
   // id, so the cache must be invalidated on settings updates too).
@@ -545,8 +757,12 @@ export function apply(ctx: ClientContext): void {
       features,
       useFeatures,
       listModels,
+      testVision,
+      testAudio,
       asrStatus,
       asrInstall,
+      envCheck,
+      envRepair,
       useImageRecognition,
     }),
   }, LooklookPluginCard))
@@ -593,35 +809,66 @@ export function apply(ctx: ClientContext): void {
       // reset() — dispatch a dragend so the full-page drop overlay (the
       // frosted mask) dismisses instead of sticking.
       window.dispatchEvent(new DragEvent('dragend'))
-      // Upload now: the chip appears IMMEDIATELY in an uploading state
-      // (spinner + progress) so the user sees it is working; the path lands
-      // when done. Nothing is sent until the user presses Enter.
-      void (async () => {
-        for (const file of files) {
-          const staged = { name: file.name, size: file.size, uploading: true, progress: 0 }
-          pending.add(sessionId, staged)
-          const id = pending.get(sessionId)[pending.get(sessionId).length - 1]?.id
-          if (id === undefined) continue
-          try {
-            const { path } = await uploadFileRpc(sessionId, file, (percent) => {
-              pending.updateById(sessionId, id, { progress: percent })
-            })
-            pending.updateById(sessionId, id, { path, uploading: false, progress: 100, error: undefined })
-          } catch (error) {
-            console.error('looklook upload failed:', file.name, error)
-            pending.updateById(sessionId, id, {
-              uploading: false,
-              error: error instanceof Error ? error.message : String(error),
-            })
-          }
-        }
-      })()
+      void stageUploads(sessionId, files, pending)
     }
     document.addEventListener('dragover', onDragOverCapture, true)
     document.addEventListener('drop', onDropCapture, true)
+
+    // Paste (Ctrl+V) images: intercept in CAPTURE so the native composer
+    // paste handler (bubble phase) never sees them — route through the file
+    // channel exactly like a drop.
+    const onPasteCapture = (event: ClipboardEvent): void => {
+      if (event.clipboardData === null) return
+      const sessionId = sessions.currentProvideInfo.getSnapshot()?.sessionId
+      if (sessionId === undefined || sessionId === '') return
+      const imageFiles = [...event.clipboardData.items]
+        .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+        .map(item => item.getAsFile())
+        .filter((file): file is File => file !== null)
+      if (imageFiles.length === 0) return
+      // Same modality gate as drop: eye off → native; model sees images →
+      // native; otherwise file channel.
+      const eye = eyeFor(sessionId).store.getSnapshot()
+      if (eye.status === 'ready' && eye.eye === 'off') return
+      const supportsImage = cachedSupportsImage(sessionId)
+      if (supportsImage === true) return
+      event.preventDefault()
+      event.stopPropagation()
+      void stageUploads(sessionId, imageFiles, pending)
+    }
+    document.addEventListener('paste', onPasteCapture, true)
+
+    // "+ 按钮" file picker: the picker commits through an <input type=file>
+    // change event. Intercept in CAPTURE so image picks never reach the
+    // native intake; only when the session routes images through the file
+    // channel. Non-image picks (if any) are left to native.
+    const onChangeCapture = (event: Event): void => {
+      const input = event.target
+      if (!(input instanceof HTMLInputElement)) return
+      if (input.type !== 'file') return
+      const files = [...(input.files ?? [])]
+      if (files.length === 0) return
+      const sessionId = sessions.currentProvideInfo.getSnapshot()?.sessionId
+      if (sessionId === undefined || sessionId === '') return
+      const imageFiles = files.filter(file => isNativeImageName(file.name) || file.type.startsWith('image/'))
+      if (imageFiles.length === 0) return
+      const eye = eyeFor(sessionId).store.getSnapshot()
+      if (eye.status === 'ready' && eye.eye === 'off') return
+      const supportsImage = cachedSupportsImage(sessionId)
+      if (supportsImage === true) return
+      event.preventDefault()
+      event.stopPropagation()
+      // Clear the picker so the same file can be chosen again.
+      input.value = ''
+      void stageUploads(sessionId, imageFiles, pending)
+    }
+    document.addEventListener('change', onChangeCapture, true)
+
     return () => {
       document.removeEventListener('dragover', onDragOverCapture, true)
       document.removeEventListener('drop', onDropCapture, true)
+      document.removeEventListener('paste', onPasteCapture, true)
+      document.removeEventListener('change', onChangeCapture, true)
     }
   }, 'dsh-looklook: file drag-and-drop')
 

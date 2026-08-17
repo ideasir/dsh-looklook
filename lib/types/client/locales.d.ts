@@ -54,6 +54,11 @@ export declare const zh: {
     'upload.remove': string;
     'upload.enterToSend': string;
     'upload.message': string;
+    'env.checkButton': string;
+    'env.dialogTitle': string;
+    'env.checking': string;
+    'env.close': string;
+    'env.refresh': string;
 };
 /** The looklook namespace key union. */
 export type LookLookKey = keyof typeof zh;
@@ -112,4 +117,9 @@ export declare const en: {
     'upload.remove': string;
     'upload.enterToSend': string;
     'upload.message': string;
+    'env.checkButton': string;
+    'env.dialogTitle': string;
+    'env.checking': string;
+    'env.close': string;
+    'env.refresh': string;
 };

@@ -88,3 +88,21 @@ export async function uploadFile(
 
 /** Session modality probe result. */
 export type SessionModality = { ok: true; supportsImage: boolean } | { ok: false; error: string }
+
+/** One environment-check item (mirrors the host EnvCheckItem). */
+export interface EnvCheckItem {
+  id: string
+  label: string
+  status: 'ok' | 'missing' | 'error'
+  detail: string
+  repairable: boolean
+  repairAction?: 'install-yt-dlp' | 'install-asr'
+  guidance?: string
+}
+
+/** The full environment report (mirrors the host EnvCheckReport). */
+export interface EnvCheckReport {
+  ok: boolean
+  items: EnvCheckItem[]
+  summary: string
+}

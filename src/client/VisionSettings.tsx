@@ -26,6 +26,14 @@ export interface ModelSettingsInjected {
   listModels: (provider: { baseURL: string; apiKeyEnv: string; apiKey?: string }) => Promise<
     { ok: true; models: string[] } | { ok: false; error: string }
   >
+  /** Probe whether one vision provider can actually see images. */
+  testVision: (provider: { baseURL: string; apiKeyEnv: string; apiKey?: string; model: string }) => Promise<
+    { ok: true; supportsImage: boolean; message: string } | { ok: false; error: string }
+  >
+  /** Probe one audio provider's capability level (L1/L2/none). */
+  testAudio: (provider: { baseURL: string; apiKeyEnv: string; apiKey?: string; model: string }) => Promise<
+    { ok: true; level: 'L1' | 'L2' | 'none'; message: string } | { ok: false; error: string }
+  >
   /** Read the local ASR install state through the authorized RPC. */
   asrStatus: () => Promise<AsrStatus>
   /** Trigger the local ASR install through the authorized RPC. */
@@ -180,7 +188,7 @@ function LocalAsrCard({ asrStatus, asrInstall, t }: {
 
 /** The model-configuration body (visual + audio sections). */
 export function ModelSettingsSection(props: ModelSettingsInjected) {
-  const { api, t, listModels, asrStatus, asrInstall } = props
+  const { api, t, listModels, testVision, testAudio, asrStatus, asrInstall } = props
   return (
     <div style={css.stack}>
       <ProviderListEditor
@@ -190,6 +198,8 @@ export function ModelSettingsSection(props: ModelSettingsInjected) {
         title={t('settings.vision.title')}
         intro={t('settings.vision.intro')}
         listModels={listModels}
+        testModel={testVision}
+        testLabel="测试看图能力"
       />
       <div style={css.divider} />
       <ProviderListEditor
@@ -198,6 +208,9 @@ export function ModelSettingsSection(props: ModelSettingsInjected) {
         ns="looklook-audio"
         title={t('settings.audio.title')}
         intro={t('settings.audio.intro')}
+        listModels={listModels}
+        testModel={testAudio}
+        testLabel="测试音频能力"
       />
       <LocalAsrCard asrStatus={asrStatus} asrInstall={asrInstall} t={t} />
     </div>

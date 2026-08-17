@@ -32,6 +32,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { AudioProviderConfig, AudioScope, VisionScope } from './settings.ts'
 import { enabledAudioProviders, enabledProviders } from './settings.ts'
 import { chatCompletionsUrl } from './vision-client.ts'
+import { detectPython } from './python-env.ts'
 
 /** The vendored worker's directory (scripts/video-worker next to this file). */
 const WORKER_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'video-worker')
@@ -107,16 +108,50 @@ function runWorker(
     // worker's fixed frame/file names (P1: cross-session frame theft).
     const callDir = join(TMP_DIR, `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`)
     void mkdir(callDir, { recursive: true }).catch(() => {})
-    const args = ['worker.py', source, callDir, JSON.stringify(opts)]
-    const child = spawn('python3', args, {
-      cwd: WORKER_DIR,
-      env: {
-        ...process.env,
-        PYTHONIOENCODING: 'utf-8',
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    let stdout = ''
+    void detectPython().then((pyEnv) => {
+      if (!pyEnv.ok || pyEnv.command === undefined) {
+        rejectBody(new Error(pyEnv.error ?? '未找到可用的 Python 运行时'))
+        return
+      }
+      const pythonCmd: string = pyEnv.command
+      const args = ['worker.py', source, callDir, JSON.stringify(opts)]
+      const child = spawn(pythonCmd, args, {
+        cwd: WORKER_DIR,
+        env: {
+          ...process.env,
+          PYTHONIOENCODING: 'utf-8',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }) as import('node:child_process').ChildProcessByStdio<null, import('node:stream').Readable, import('node:stream').Readable>
+      attachWorkerListeners(child, callDir, stdoutAccumulator(), signal, timeoutMs)
+        .then(resolveBody, rejectBody)
+    }).catch(rejectBody)
+  })
+}
+
+/** Accumulate child stdout. */
+function stdoutAccumulator(): { buffer: string; push: (chunk: Buffer) => void; get: () => string } {
+  let stdout = ''
+  return {
+    buffer: stdout,
+    push: (chunk: Buffer) => { stdout += chunk.toString('utf8') },
+    get: () => stdout,
+  }
+}
+
+/**
+ * Wire the worker child's stdout/stderr/close/error and the abort/timeout
+ * handling, resolving with the parsed WorkerOutput. Broken out of runWorker
+ * so the Python-runtime probe can stay asynchronous.
+ */
+function attachWorkerListeners(
+  child: import('node:child_process').ChildProcessByStdio<null, import('node:stream').Readable, import('node:stream').Readable>,
+  callDir: string,
+  acc: ReturnType<typeof stdoutAccumulator>,
+  signal: AbortSignal,
+  timeoutMs: number,
+): Promise<WorkerOutput> {
+  return new Promise((resolveBody, rejectBody) => {
     let stderr = ''
     let settled = false
     // Best-effort scratch cleanup on settle (success, failure, timeout, abort).
@@ -139,7 +174,7 @@ function runWorker(
       rejectBody(new Error('视频分析已取消'))
     }
     signal.addEventListener('abort', onAbort, { once: true })
-    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString('utf8') })
+    child.stdout.on('data', (chunk: Buffer) => { acc.push(chunk) })
     child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8') })
     child.on('error', (error) => {
       if (settled) return
@@ -158,7 +193,7 @@ function runWorker(
         return
       }
       try {
-        resolveBody(JSON.parse(stdout) as WorkerOutput)
+        resolveBody(JSON.parse(acc.get()) as WorkerOutput)
       } catch (error) {
         rejectBody(new Error(`无法解析视频分析结果：${error instanceof Error ? error.message : String(error)}`))
       }
@@ -338,12 +373,17 @@ async function audioLocal(
   wavPath: string,
   signal: AbortSignal,
 ): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  const pyEnv = await detectPython()
+  if (!pyEnv.ok || pyEnv.command === undefined) {
+    return { ok: false, error: pyEnv.error ?? '未找到可用的 Python 运行时' }
+  }
+  const pythonCmd: string = pyEnv.command
   return new Promise((resolveBody) => {
     const script = LOCAL_ASR_SCRIPT
-    const child = spawn('python3', [script, wavPath], {
+    const child = spawn(pythonCmd, [script, wavPath], {
       env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
       stdio: ['ignore', 'pipe', 'pipe'],
-    })
+    }) as import('node:child_process').ChildProcessByStdio<null, import('node:stream').Readable, import('node:stream').Readable>
     let stdout = ''
     let stderr = ''
     let settled = false

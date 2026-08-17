@@ -29,6 +29,34 @@ export interface ModelSettingsInjected {
         ok: false;
         error: string;
     }>;
+    /** Probe whether one vision provider can actually see images. */
+    testVision: (provider: {
+        baseURL: string;
+        apiKeyEnv: string;
+        apiKey?: string;
+        model: string;
+    }) => Promise<{
+        ok: true;
+        supportsImage: boolean;
+        message: string;
+    } | {
+        ok: false;
+        error: string;
+    }>;
+    /** Probe one audio provider's capability level (L1/L2/none). */
+    testAudio: (provider: {
+        baseURL: string;
+        apiKeyEnv: string;
+        apiKey?: string;
+        model: string;
+    }) => Promise<{
+        ok: true;
+        level: 'L1' | 'L2' | 'none';
+        message: string;
+    } | {
+        ok: false;
+        error: string;
+    }>;
     /** Read the local ASR install state through the authorized RPC. */
     asrStatus: () => Promise<AsrStatus>;
     /** Trigger the local ASR install through the authorized RPC. */

@@ -45,6 +45,21 @@ export interface ProviderListEditorProps {
         ok: false;
         error: string;
     }>;
+    /** Optional model capability probe (vision see-image / audio L1-L2). */
+    testModel?: (provider: {
+        baseURL: string;
+        apiKeyEnv: string;
+        apiKey?: string;
+        model: string;
+    }) => Promise<{
+        ok: true;
+        message: string;
+    } | {
+        ok: false;
+        error: string;
+    }>;
+    /** Label for the capability-test button (e.g. "测试看图能力"). */
+    testLabel?: string;
 }
 /**
  * The full provider-list editor. Every state hook lives here; the caller

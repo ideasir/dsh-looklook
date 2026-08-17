@@ -11,10 +11,12 @@
 import { useState } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FeatureController, FeatureState } from './feature-controller.ts'
 import { LooklookFeaturesSection, type FeaturesInjected } from './Features.tsx'
 import { ModelSettingsSection, type ModelSettingsInjected } from './VisionSettings.tsx'
+import { EnvCheckDialog, type EnvCheckInjected } from './EnvCheck.tsx'
+import type { EnvCheckItem, EnvCheckReport } from './upload-shared.ts'
 
 /** Injected face supplied by the plugin apply closure. */
 export interface LooklookCardInjected {
@@ -28,10 +30,18 @@ export interface LooklookCardInjected {
   useFeatures: () => FeatureState
   /** Probe one provider's `/models` endpoint through the host RPC. */
   listModels: ModelSettingsInjected['listModels']
+  /** Probe whether one vision provider can actually see images. */
+  testVision: ModelSettingsInjected['testVision']
+  /** Probe one audio provider's capability level (L1/L2/none). */
+  testAudio: ModelSettingsInjected['testAudio']
   /** Read the local ASR install state through the authorized RPC. */
   asrStatus: ModelSettingsInjected['asrStatus']
   /** Trigger the local ASR install through the authorized RPC. */
   asrInstall: ModelSettingsInjected['asrInstall']
+  /** Run the environment self-check. */
+  envCheck: () => Promise<EnvCheckReport>
+  /** One-click repair for one env item. */
+  envRepair: (action: 'install-yt-dlp' | 'install-asr') => Promise<EnvCheckItem>
   /** Reactive snapshot of the image recognition master switch. */
   useImageRecognition: () => boolean
 }
@@ -77,12 +87,14 @@ const css = {
 
 /** The plugin-configuration card body. */
 export function LooklookPluginCard(props: LooklookCardInjected) {
-  const { api, t, features, useFeatures, listModels, asrStatus, asrInstall, useImageRecognition } = props
+  const { api, t, features, useFeatures, listModels, testVision, testAudio, asrStatus, asrInstall, envCheck, envRepair, useImageRecognition } = props
   const [open, setOpen] = useState(false)
+  const [envOpen, setEnvOpen] = useState(false)
   // Hook order stays stable: both hooks run before any conditional return.
   const imageRecognitionOn = useImageRecognition()
   const featuresProps: FeaturesInjected = { api, t, features, useFeatures }
-  const modelProps: ModelSettingsInjected = { api, t, listModels, asrStatus, asrInstall }
+  const modelProps: ModelSettingsInjected = { api, t, listModels, testVision, testAudio, asrStatus, asrInstall }
+  const envProps: EnvCheckInjected = { t, envCheck, envRepair }
   const title = t('card.title')
   return (
     <li style={css.card}>
@@ -104,6 +116,11 @@ export function LooklookPluginCard(props: LooklookCardInjected) {
       {open && (
         <div style={css.body}>
           <LooklookFeaturesSection {...featuresProps} />
+          <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 2 }}>
+            <Button variant="outline" size="sm" onClick={() => setEnvOpen(true)}>
+              {t('env.checkButton')}
+            </Button>
+          </div>
           {imageRecognitionOn && (
             <>
               <div style={{ border: 'none', borderTop: '1px solid var(--dsw-alias-border-l2)' }} />
@@ -111,6 +128,9 @@ export function LooklookPluginCard(props: LooklookCardInjected) {
             </>
           )}
         </div>
+      )}
+      {envOpen && (
+        <EnvCheckDialog {...envProps} onClose={() => setEnvOpen(false)} />
       )}
     </li>
   )

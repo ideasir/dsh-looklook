@@ -19,6 +19,7 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { detectPython } from './python-env.ts'
 
 /**
  * The local ASR root: `$DSH_HOME/looklook-asr`, falling back to
@@ -94,22 +95,28 @@ export async function performInstall(): Promise<void> {
   if (installState.phase !== 'none' && installState.phase !== 'failed') return
   installState = { phase: 'checking' }
   try {
-    // 1) env check
-    const py = await run('python3', ['--version'])
-    if (!py.ok) throw new Error(`python3 不可用：${py.stderr || '未安装'}`)
+    // 1) env check: Python runtime (auto-detected: python3/python/py) + ffmpeg.
+    const pyEnv = await detectPython()
+    if (!pyEnv.ok || pyEnv.command === undefined) {
+      throw new Error(pyEnv.error ?? '未找到可用的 Python 运行时')
+    }
+    const pythonCmd = pyEnv.command
+    const py = await run(pythonCmd, ['--version'])
+    if (!py.ok) throw new Error(`Python 不可用（${pythonCmd}）：${py.stderr || '运行失败'}`)
     const ff = await run('ffmpeg', ['-version'], 10_000)
     if (!ff.ok) throw new Error('ffmpeg 不可用，请先安装 ffmpeg')
     await mkdir(ASR_DIR, { recursive: true })
 
-    // 2) deps
+    // 2) deps (use the same Python's pip module — `pip3` may not exist when
+    //    only `python`/`py` does).
     installState = { phase: 'installing-deps' }
-    const pip = await run('pip3', ['install', '--break-system-packages', '-q', 'faster-whisper'], 600_000)
+    const pip = await run(pythonCmd, ['-m', 'pip', 'install', '--break-system-packages', '-q', 'faster-whisper'], 600_000)
     if (!pip.ok) throw new Error(`faster-whisper 安装失败：${pip.stderr}`)
 
     // 3) model download (probe once so the model is cached)
     installState = { phase: 'downloading-model' }
     const probeCode = `from faster_whisper import WhisperModel; WhisperModel(${JSON.stringify(LOCAL_ASR_MODEL)}, device="cpu", compute_type="int8")`
-    const probe = await run('python3', ['-c', probeCode], 1_800_000)
+    const probe = await run(pythonCmd, ['-c', probeCode], 1_800_000)
     if (!probe.ok) throw new Error(`模型下载失败：${probe.stderr}`)
 
     // 4) write wrapper + marker

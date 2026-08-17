@@ -55,6 +55,11 @@ export const zh = {
   'upload.remove': '移除附件',
   'upload.enterToSend': '按发送键一并发送',
   'upload.message': '上传了文件 {name} → {path}',
+  'env.checkButton': '环境检测',
+  'env.dialogTitle': '环境检测',
+  'env.checking': '检测中…',
+  'env.close': '关闭',
+  'env.refresh': '重新检测',
 } satisfies Record<string, string>
 
 /** The looklook namespace key union. */
@@ -115,4 +120,9 @@ export const en = {
   'upload.remove': 'Remove attachment',
   'upload.enterToSend': 'Sends with the message',
   'upload.message': 'Uploaded file {name} → {path}',
+  'env.checkButton': 'Environment Check',
+  'env.dialogTitle': 'Environment Check',
+  'env.checking': 'Checking…',
+  'env.close': 'Close',
+  'env.refresh': 'Re-check',
 } satisfies Record<LookLookKey, string>

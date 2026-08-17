@@ -18,10 +18,30 @@ import type { Context } from '@deepseek-ai/cordis';
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
 import { MAX_UPLOAD_BYTES } from './upload.ts';
 import { readReadyMarker, type AsrInstallPhase } from './asr-install.ts';
+import { type EnvCheckReport, type EnvCheckItem } from './env-check.ts';
 /** One model-discovery outcome, returned over the wire as lossless JSON. */
 export type LooklookListModelsResult = {
     ok: true;
     models: string[];
+} | {
+    ok: false;
+    error: string;
+};
+/** One vision-model capability probe outcome. */
+export type LooklookTestVisionResult = {
+    ok: true;
+    supportsImage: boolean;
+    message: string;
+} | {
+    ok: false;
+    error: string;
+};
+/** One audio-model capability probe outcome (L1 = transcript-only,
+ * L2 = transcript + tone/music/pace via input_audio). */
+export type LooklookTestAudioResult = {
+    ok: true;
+    level: 'L1' | 'L2' | 'none';
+    message: string;
 } | {
     ok: false;
     error: string;
@@ -120,5 +140,33 @@ export declare class LooklookRemoteService extends TypertRemoteService {
         ok: false;
         error: string;
     }>;
+    /** Run the full environment self-check for the settings dialog. */
+    envCheck(): Promise<EnvCheckReport>;
+    /** One-click repair for one env item; returns the item's fresh state. */
+    envRepair(action: 'install-yt-dlp' | 'install-asr'): Promise<EnvCheckItem>;
+    /**
+     * Probe whether one vision provider actually accepts image input, by
+     * sending a tiny built-in test image through chat/completions. A 2xx with
+     * a non-empty answer means the model can see images; 400/415/422 mean the
+     * endpoint rejects image input.
+     */
+    testVision(provider: {
+        baseURL: string;
+        apiKeyEnv: string;
+        apiKey?: string;
+        model: string;
+    }): Promise<LooklookTestVisionResult>;
+    /**
+     * Probe one audio provider's capability level:
+     * - L2: chat/completions + input_audio works (transcript + tone/music/pace);
+     * - L1: only /v1/audio/transcriptions works (transcript only);
+     * - none: neither route accepts the test audio.
+     */
+    testAudio(provider: {
+        baseURL: string;
+        apiKeyEnv: string;
+        apiKey?: string;
+        model: string;
+    }): Promise<LooklookTestAudioResult>;
 }
 export { MAX_UPLOAD_BYTES, readReadyMarker };

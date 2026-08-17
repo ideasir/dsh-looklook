@@ -54,6 +54,12 @@ export interface ProviderListEditorProps {
   listModels?: (provider: { baseURL: string; apiKeyEnv: string; apiKey?: string }) => Promise<
     { ok: true; models: string[] } | { ok: false; error: string }
   >
+  /** Optional model capability probe (vision see-image / audio L1-L2). */
+  testModel?: (provider: { baseURL: string; apiKeyEnv: string; apiKey?: string; model: string }) => Promise<
+    { ok: true; message: string } | { ok: false; error: string }
+  >
+  /** Label for the capability-test button (e.g. "测试看图能力"). */
+  testLabel?: string
 }
 
 /** The namespace value as read through the wire. */
@@ -129,7 +135,7 @@ const layout = {
  * mounts it once per namespace (visual / audio).
  */
 export function ProviderListEditor(props: ProviderListEditorProps) {
-  const { api, t, ns, title, intro, listModels } = props
+  const { api, t, ns, title, intro, listModels, testModel, testLabel } = props
   const [providers, setProviders] = useState<ProviderDraft[]>([])
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -140,6 +146,8 @@ export function ProviderListEditor(props: ProviderListEditorProps) {
   const [fetchedModels, setFetchedModels] = useState<Record<string, string[]>>({})
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [keyStates, setKeyStates] = useState<Record<string, boolean>>({})
+  const [testing, setTesting] = useState<string | null>(null)
+  const [testResult, setTestResult] = useState<{ id: string; text: string; ok: boolean } | null>(null)
 
   useEffect(() => {
     void (async () => {
@@ -231,6 +239,38 @@ export function ProviderListEditor(props: ProviderListEditorProps) {
     }
   }
 
+  /** Run the model capability probe (vision see-image / audio L1-L2). */
+  const testProvider = async (draft: ProviderDraft): Promise<void> => {
+    if (testModel === undefined) return
+    setTesting(draft.id)
+    setTestResult(null)
+    try {
+      if (typeof draft.baseURL !== 'string' || draft.baseURL.trim() === '') {
+        setTestResult({ id: draft.id, ok: false, text: t('settings.provider.baseURLRequired') })
+        return
+      }
+      if (typeof draft.model !== 'string' || draft.model.trim() === '') {
+        setTestResult({ id: draft.id, ok: false, text: '请先填写模型名' })
+        return
+      }
+      const result = await testModel({
+        baseURL: draft.baseURL,
+        apiKeyEnv: credentialRefFor(draft.id),
+        model: draft.model,
+        ...draft.apiKey !== undefined && draft.apiKey !== '' ? { apiKey: draft.apiKey } : {},
+      })
+      if (result.ok) {
+        setTestResult({ id: draft.id, ok: true, text: result.message })
+      } else {
+        setTestResult({ id: draft.id, ok: false, text: result.error })
+      }
+    } catch (error) {
+      setTestResult({ id: draft.id, ok: false, text: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setTesting(null)
+    }
+  }
+
   const save = async (): Promise<void> => {
     setSaving(true)
     setNotice(null)
@@ -314,16 +354,32 @@ export function ProviderListEditor(props: ProviderListEditorProps) {
         {(fetchedModels[draft.id] ?? []).length > 0 && (
           <span style={layout.hint}>{t('settings.provider.modelsFetched')}</span>
         )}
-        {listModels !== undefined && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Button
-              variant="outline" size="sm"
-              disabled={fetching === draft.id}
-              onClick={() => void fetchModels(draft)}
-            >
-              {fetching === draft.id ? '…' : t('settings.provider.fetchModels')}
-            </Button>
+        {(listModels !== undefined || testModel !== undefined) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {listModels !== undefined && (
+              <Button
+                variant="outline" size="sm"
+                disabled={fetching === draft.id}
+                onClick={() => void fetchModels(draft)}
+              >
+                {fetching === draft.id ? '…' : t('settings.provider.fetchModels')}
+              </Button>
+            )}
+            {testModel !== undefined && testLabel !== undefined && (
+              <Button
+                variant="outline" size="sm"
+                disabled={testing === draft.id}
+                onClick={() => void testProvider(draft)}
+              >
+                {testing === draft.id ? '测试中…' : testLabel}
+              </Button>
+            )}
             {fetchError !== null && <span style={layout.error}>{fetchError}</span>}
+            {testResult !== null && testResult.id === draft.id && (
+              <span style={testResult.ok ? layout.hint : layout.error} aria-live="polite">
+                {testResult.text}
+              </span>
+            )}
           </div>
         )}
       </div>

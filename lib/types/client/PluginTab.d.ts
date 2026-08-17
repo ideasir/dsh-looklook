@@ -11,6 +11,7 @@ import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client';
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots';
 import type { FeatureController, FeatureState } from './feature-controller.ts';
 import { type ModelSettingsInjected } from './VisionSettings.tsx';
+import type { EnvCheckItem, EnvCheckReport } from './upload-shared.ts';
 /** Injected face supplied by the plugin apply closure. */
 export interface LooklookCardInjected {
     /** The wire API client. */
@@ -23,10 +24,18 @@ export interface LooklookCardInjected {
     useFeatures: () => FeatureState;
     /** Probe one provider's `/models` endpoint through the host RPC. */
     listModels: ModelSettingsInjected['listModels'];
+    /** Probe whether one vision provider can actually see images. */
+    testVision: ModelSettingsInjected['testVision'];
+    /** Probe one audio provider's capability level (L1/L2/none). */
+    testAudio: ModelSettingsInjected['testAudio'];
     /** Read the local ASR install state through the authorized RPC. */
     asrStatus: ModelSettingsInjected['asrStatus'];
     /** Trigger the local ASR install through the authorized RPC. */
     asrInstall: ModelSettingsInjected['asrInstall'];
+    /** Run the environment self-check. */
+    envCheck: () => Promise<EnvCheckReport>;
+    /** One-click repair for one env item. */
+    envRepair: (action: 'install-yt-dlp' | 'install-asr') => Promise<EnvCheckItem>;
     /** Reactive snapshot of the image recognition master switch. */
     useImageRecognition: () => boolean;
 }
