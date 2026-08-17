@@ -299,6 +299,7 @@ CHROME_CANDIDATES = [
     os.path.expandvars(r'%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe'),
     r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
     r'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
+    r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
     os.path.expandvars(r'%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe'),
     # Linux
     '/usr/bin/chromium',
