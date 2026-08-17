@@ -18,6 +18,7 @@ import { spawn } from 'node:child_process'
 import { access } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { configuredVideoProxy } from './video-tool.ts'
 import { detectPython } from './python-env.ts'
 import { localAsrReady, ensureVenv, VENV_DIR } from './asr-install.ts'
 
@@ -210,9 +211,23 @@ export async function repairEnv(action: 'install-yt-dlp' | 'install-asr'): Promi
   return await checkYtDlp(venvPy)
 }
 
+/** Report whether a proxy is configured without exposing its URL or credentials. */
+function checkVideoProxy(): EnvCheckItem {
+  const configured = configuredVideoProxy() !== undefined
+  return {
+    id: 'proxy',
+    label: '网络代理（视频链接）',
+    status: configured ? 'ok' : 'missing',
+    detail: configured ? '已检测到代理配置（视频链接将尝试使用）' : '未检测到代理配置',
+    repairable: false,
+    ...configured ? {} : { guidance: 'YouTube 等境外视频需要可用代理。可配置 DISCORD_PROXY、HTTPS_PROXY、HTTP_PROXY 或 ALL_PROXY 后重启 DSH。' },
+  }
+}
+
 /** Build the full environment report. */
 export async function runEnvCheck(): Promise<EnvCheckReport> {
   const items: EnvCheckItem[] = []
+  items.push(checkVideoProxy())
 
   // 1) Python runtime (system) + isolated venv status.
   const pyEnv = await detectPython()

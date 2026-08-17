@@ -24,6 +24,12 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { AudioScope, VisionScope } from './settings.ts';
 /**
+ * Resolve the machine's configured outbound proxy without exposing its value.
+ * DISCORD_PROXY is kept first for backwards compatibility; standard proxy
+ * variables cover YouTube and other external video sites.
+ */
+export declare function configuredVideoProxy(env?: NodeJS.ProcessEnv): string | undefined;
+/**
  * Watch and analyze a video (local file path or URL) — the video branch of
  * the unified looklook_see tool.
  * @returns the composed report text (or a failure message).

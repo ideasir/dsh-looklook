@@ -59,6 +59,19 @@ const LOCAL_ASR_MARKER = join(ASR_DIR, 'ready')
 /** The local ASR transcribe script (written by the installer). */
 const LOCAL_ASR_SCRIPT = join(ASR_DIR, 'transcribe.py')
 
+/**
+ * Resolve the machine's configured outbound proxy without exposing its value.
+ * DISCORD_PROXY is kept first for backwards compatibility; standard proxy
+ * variables cover YouTube and other external video sites.
+ */
+export function configuredVideoProxy(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  for (const key of ['DISCORD_PROXY', 'HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'https_proxy', 'http_proxy', 'all_proxy']) {
+    const value = env[key]?.trim()
+    if (value !== undefined && value !== '') return value
+  }
+  return undefined
+}
+
 /** Worker stdout JSON (the stable contract with worker.py). */
 interface WorkerOutput {
   ok: boolean
@@ -753,7 +766,7 @@ export async function watchVideo(
         transcript: true,
         frames: 20,
         lang: 'zh',
-        ...(isUrl ? { proxy: process.env.DISCORD_PROXY } : {}),
+        ...(isUrl ? { proxy: configuredVideoProxy() } : {}),
       },
       signal,
     )
