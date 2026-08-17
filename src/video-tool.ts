@@ -166,6 +166,55 @@ function stdoutAccumulator(): { buffer: string; push: (chunk: Buffer) => void; g
 }
 
 /**
+ * Parse worker JSON defensively. The worker keeps stdout clean, but older
+ * yt-dlp versions or third-party extractors may leak progress lines there.
+ * Scan balanced JSON objects and use the last valid result document.
+ */
+function parseWorkerOutput(raw: string): WorkerOutput {
+  const text = raw.trim()
+  try {
+    return JSON.parse(text) as WorkerOutput
+  } catch {
+    // Recover from legacy/noisy stdout below.
+  }
+  let start = -1
+  let depth = 0
+  let quoted = false
+  let escaped = false
+  let last: WorkerOutput | undefined
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i]
+    if (quoted) {
+      if (escaped) escaped = false
+      else if (ch === '\\\\') escaped = true
+      else if (ch === '\"') quoted = false
+      continue
+    }
+    if (ch === '\"') {
+      quoted = true
+      continue
+    }
+    if (ch === '{') {
+      if (depth === 0) start = i
+      depth += 1
+    } else if (ch === '}' && depth > 0) {
+      depth -= 1
+      if (depth === 0 && start >= 0) {
+        try {
+          const candidate = JSON.parse(raw.slice(start, i + 1)) as WorkerOutput
+          if (candidate !== null && typeof candidate === 'object' && typeof candidate.ok === 'boolean') last = candidate
+        } catch {
+          // Ignore malformed fragments and keep scanning.
+        }
+        start = -1
+      }
+    }
+  }
+  if (last !== undefined) return last
+  throw new Error('worker stdout did not contain a valid result JSON document')
+}
+
+/**
  * Wire the worker child's stdout/stderr/close/error and the abort/timeout
  * handling, resolving with the parsed WorkerOutput. Broken out of runWorker
  * so the Python-runtime probe can stay asynchronous.
@@ -219,9 +268,12 @@ function attachWorkerListeners(
         return
       }
       try {
-        resolveBody(JSON.parse(acc.get()) as WorkerOutput)
+        resolveBody(parseWorkerOutput(acc.get()))
       } catch (error) {
-        rejectBody(new Error(`无法解析视频分析结果：${error instanceof Error ? error.message : String(error)}`))
+        const stdoutTail = acc.get().trim().slice(-300)
+        const stderrTail = stderr.trim().slice(-300)
+        const detail = [error instanceof Error ? error.message : String(error), stdoutTail ? `stdout: ${stdoutTail}` : '', stderrTail ? `stderr: ${stderrTail}` : ''].filter(Boolean).join('；')
+        rejectBody(new Error(`无法解析视频分析结果：${detail}`))
       }
     })
   })

@@ -37,6 +37,23 @@ def log(msg):
     sys.stderr.flush()
 
 
+class YtDlpLogger:
+    """Keep yt-dlp diagnostics off stdout: stdout is a one-document JSON IPC channel."""
+
+    def debug(self, msg):
+        if msg and not msg.startswith('[debug] '):
+            log(msg)
+
+    def info(self, msg):
+        log(msg)
+
+    def warning(self, msg):
+        log('warning: %s' % msg)
+
+    def error(self, msg):
+        log('error: %s' % msg)
+
+
 def parse_subtitle_file(path):
     """Strip timestamps/tags from an srt/vtt file, return plain text."""
     try:
@@ -106,6 +123,8 @@ def base_opts(cookies_browser=None, cookies_file=None, proxy=None):
     opts = {
         'quiet': True,
         'no_warnings': True,
+        'noprogress': True,
+        'logger': YtDlpLogger(),
         'noplaylist': True,
         'retries': 3,
         'fragment_retries': 3,
