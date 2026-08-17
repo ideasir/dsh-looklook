@@ -213,7 +213,12 @@ for seg in segments:
  * Re-entrant calls (two concurrent asrInstall RPCs) are refused: the second
  * call sees the non-'none' phase and returns already:true. */
 export async function performInstall(modelId = DEFAULT_ASR_MODEL): Promise<void> {
-  if (installState.phase !== 'none' && installState.phase !== 'failed') return
+  // Refuse ONLY while an install is actively running. 'done' must stay
+  // restartable: a swap (install a different model after a successful
+  // install) re-enters here with phase 'done' and MUST run — otherwise
+  // 换装 silently no-ops (the old bug).
+  if (installState.phase === 'checking' || installState.phase === 'installing-deps'
+      || installState.phase === 'downloading-model' || installState.phase === 'writing') return
   const option = asrModelOption(modelId)
   if (option === undefined) {
     installState = { phase: 'failed', error: `未知的 ASR 模型：${modelId}` }

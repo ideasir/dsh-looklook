@@ -172,9 +172,16 @@ export class LooklookRemoteService extends TypertRemoteService {
   async asrStatus(): Promise<LooklookAsrStatus> {
     const installed = await localAsrReady()
     const currentModel = await installedAsrModel()
+    const memPhase = currentInstallPhase()
+    const isActive = memPhase === 'checking' || memPhase === 'installing-deps'
+      || memPhase === 'downloading-model' || memPhase === 'writing'
     return {
-      installed,
-      phase: installed ? 'done' : currentInstallPhase(),
+      // While an install is actively running (incl. a SWAP), the old ready
+      // marker may still exist — do NOT report installed/done then, or the
+      // client stops polling and misses the swap. installed is true only
+      // when a marker exists AND nothing is running.
+      installed: installed && !isActive,
+      phase: isActive ? memPhase : (installed ? 'done' : memPhase),
       model: currentModel ?? '',
       options: ASR_MODEL_OPTIONS.map(({ id, name, sizeLabel }) => ({ id, name, sizeLabel })),
       error: currentInstallError(),
