@@ -5,7 +5,7 @@
  * toggle can warn when the eye is on but recognition is not configured.
  */
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client';
-import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client';
+import type { PluginSettingsClient } from './plugin-settings.ts';
 /** Eye toggle state for one session. */
 export type EyeState = {
     status: 'loading';
@@ -21,4 +21,4 @@ export interface EyeController {
     toggle(next: 'on' | 'off'): void;
 }
 /** Create the controller for one session. */
-export declare function createEyeController(api: IApiClient, sessionId: string): EyeController;
+export declare function createEyeController(api: PluginSettingsClient, sessionId: string): EyeController;

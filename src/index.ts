@@ -12,11 +12,10 @@
  * - OFF: the plugin is dormant — nothing is intercepted, the see tool answers
  *   "已关闭", and DSH behaves exactly as if the plugin were absent.
  *
- * Settings exposure is the standard rc.6 mechanism: the `vision`,
- * `looklook`, and `looklook-audio` namespaces are declared through
- * `llm.registerConfigurableProviders()`, and dsh-host-apiproxy's
- * configuration-client boundary automatically serves every configurable
- * provider's settings namespace. No `WEB_SETTINGS_NAMESPACES` patch.
+ * Plugin-owned settings are read and written through the authorized
+ * `remote.looklook` RPC namespace. They are deliberately NOT registered as
+ * configurable LLM providers, because rc.6 renders every such entry in the
+ * global model-provider picker. No `WEB_SETTINGS_NAMESPACES` patch.
  *
  * Upload / ASR install / model discovery / env check are Remote RPCs on the
  * `looklook` wire namespace (Typert), so they inherit the api-proxy
@@ -49,8 +48,7 @@ export const inject = ['settings', 'llm', 'sessions', 'credentials', 'tools', 's
 
 /**
  * Plugin body: register the feature toggles + vision/audio settings
- * namespaces, declare them as configurable providers (the rc.6 standard way
- * to expose a namespace to the configuration client), register the unified
+ * namespaces, expose their private settings RPCs, register the unified
  * looklook_see / process_zip tools, the upload RPC, and the ASR install RPC.
  */
 export function apply(ctx: Context, config: VisionSettings): void {
@@ -60,17 +58,10 @@ export function apply(ctx: Context, config: VisionSettings): void {
   // Audio model (L2+L3 merged): API providers; local ASR install state on disk.
   const audioScope: AudioScope = ctx.settings.register(settingsNamespace('looklook-audio'), AudioConfig, { base: undefined })
 
-  // Standard settings exposure: api-proxy serves every configurable
-  // provider's settingsNs to the configuration client. Declaring the three
-  // namespaces here makes the settings page read/write them WITHOUT patching
-  // dsh-host-apiproxy's WEB_SETTINGS_NAMESPACES. Providers are informational
-  // (no adapter is registered); they never appear as selectable conversation
-  // models because the model catalog comes from registered adapters.
-  ctx.llm.registerConfigurableProviders([
-    { provider: 'looklook-features', displayName: '看看·功能开关', settingsNs: 'looklook', settingsPath: [] },
-    { provider: 'looklook-vision', displayName: '看看·视觉模型', settingsNs: 'vision', settingsPath: [] },
-    { provider: 'looklook-audio', displayName: '看看·音频模型', settingsNs: 'looklook-audio', settingsPath: [] },
-  ])
+  // Plugin-owned settings are served through the private remote.looklook RPCs
+  // below. Do NOT register them as configurable LLM providers: rc.6 exposes
+  // every such entry in the global model-provider picker, which makes plugin
+  // settings appear as fake models.
 
   // Master switch: one switch controls the whole plugin (ON = all features,
   // OFF = dormant, harness behaves as without it). The see tool answers

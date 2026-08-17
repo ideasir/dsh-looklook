@@ -12,11 +12,10 @@
  * - OFF: the plugin is dormant — nothing is intercepted, the see tool answers
  *   "已关闭", and DSH behaves exactly as if the plugin were absent.
  *
- * Settings exposure is the standard rc.6 mechanism: the `vision`,
- * `looklook`, and `looklook-audio` namespaces are declared through
- * `llm.registerConfigurableProviders()`, and dsh-host-apiproxy's
- * configuration-client boundary automatically serves every configurable
- * provider's settings namespace. No `WEB_SETTINGS_NAMESPACES` patch.
+ * Plugin-owned settings are read and written through the authorized
+ * `remote.looklook` RPC namespace. They are deliberately NOT registered as
+ * configurable LLM providers, because rc.6 renders every such entry in the
+ * global model-provider picker. No `WEB_SETTINGS_NAMESPACES` patch.
  *
  * Upload / ASR install / model discovery / env check are Remote RPCs on the
  * `looklook` wire namespace (Typert), so they inherit the api-proxy
@@ -39,8 +38,7 @@ export declare const name = "looklook";
 export declare const inject: string[];
 /**
  * Plugin body: register the feature toggles + vision/audio settings
- * namespaces, declare them as configurable providers (the rc.6 standard way
- * to expose a namespace to the configuration client), register the unified
+ * namespaces, expose their private settings RPCs, register the unified
  * looklook_see / process_zip tools, the upload RPC, and the ASR install RPC.
  */
 export declare function apply(ctx: Context, config: VisionSettings): void;

@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PluginSettingsClient } from './plugin-settings.ts'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ProviderListEditor } from './ProviderListEditor.tsx'
 
@@ -20,6 +21,8 @@ import { ProviderListEditor } from './ProviderListEditor.tsx'
 export interface ModelSettingsInjected {
   /** The wire API client. */
   api: IApiClient
+  /** Plugin-owned settings and credential RPCs. */
+  pluginSettings: PluginSettingsClient
   /** Bound translate for the `looklook` namespace. */
   t: TranslateNS<'looklook'>
   /** Probe one provider's `/models` endpoint through the host RPC. */
@@ -290,6 +293,7 @@ export function ModelSettingsSection(props: ModelSettingsInjected) {
     <div style={css.stack}>
       <ProviderListEditor
         api={api}
+        pluginSettings={props.pluginSettings}
         t={t}
         ns="vision"
         title={t('settings.vision.title')}
@@ -301,6 +305,7 @@ export function ModelSettingsSection(props: ModelSettingsInjected) {
       <div style={css.divider} />
       <ProviderListEditor
         api={api}
+        pluginSettings={props.pluginSettings}
         t={t}
         ns="looklook-audio"
         title={t('settings.audio.title')}

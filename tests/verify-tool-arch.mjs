@@ -66,10 +66,6 @@ if (names.length !== 2 || !names.includes("looklook_see") || !names.includes("pr
   throw new Error("tools not registered: " + names.join(", "));
 }
 if (prompts.length < 1) throw new Error("system prompts missing");
-if (providers.length !== 3) throw new Error(`expected 3 configurable providers, got ${providers.length}`);
-const nsSet = new Set(providers.map(p => p.settingsNs));
-if (!nsSet.has("looklook") || !nsSet.has("vision") || !nsSet.has("looklook-audio")) {
-  throw new Error("settings namespaces not exposed via configurable providers: " + [...nsSet].join(", "));
-}
+if (providers.length !== 0) throw new Error(`plugin settings leaked into configurable providers: ${providers.length}`);
 console.log("NO EVENT HANDLERS: OK (zero patch footprint)");
 console.log("ALL TOOL-ARCH TESTS PASS");

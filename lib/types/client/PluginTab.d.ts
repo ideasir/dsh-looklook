@@ -9,13 +9,16 @@
  */
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client';
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots';
+import type { PluginSettingsClient } from './plugin-settings.ts';
 import type { FeatureController, FeatureState } from './feature-controller.ts';
 import { type ModelSettingsInjected } from './VisionSettings.tsx';
 import type { EnvCheckItem, EnvCheckReport } from './upload-shared.ts';
 /** Injected face supplied by the plugin apply closure. */
 export interface LooklookCardInjected {
-    /** The wire API client. */
+    /** The wire API client for model discovery. */
     api: IApiClient;
+    /** Plugin-owned settings and credential RPCs. */
+    pluginSettings: PluginSettingsClient;
     /** Bound translate for the `looklook` namespace. */
     t: TranslateNS<'looklook'>;
     /** Feature controller (image / video toggles). */

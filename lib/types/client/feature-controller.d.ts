@@ -5,7 +5,7 @@
  * DSH behaves as without it.
  */
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client';
-import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client';
+import type { PluginSettingsClient } from './plugin-settings.ts';
 /** Master-switch state. */
 export type FeatureState = {
     status: 'loading';
@@ -20,4 +20,4 @@ export interface FeatureController {
     setEnabled(next: boolean): void;
 }
 /** Create the plugin master-switch controller. */
-export declare function createFeatureController(api: IApiClient): FeatureController;
+export declare function createFeatureController(api: PluginSettingsClient): FeatureController;

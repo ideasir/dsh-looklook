@@ -11,10 +11,13 @@
  */
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client';
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots';
+import type { PluginSettingsClient } from './plugin-settings.ts';
 /** Injected face supplied by the plugin apply closure. */
 export interface ModelSettingsInjected {
     /** The wire API client. */
     api: IApiClient;
+    /** Plugin-owned settings and credential RPCs. */
+    pluginSettings: PluginSettingsClient;
     /** Bound translate for the `looklook` namespace. */
     t: TranslateNS<'looklook'>;
     /** Probe one provider's `/models` endpoint through the host RPC. */

@@ -56,6 +56,23 @@ export type LooklookUploadResult = {
     ok: false;
     error: string;
 };
+export type LooklookSettingsResult = {
+    ok: true;
+    value: unknown;
+} | {
+    ok: false;
+    error: string;
+};
+export type LooklookCredentialsResult = {
+    ok: true;
+    credentials: Record<string, {
+        configured: boolean;
+        writable: boolean;
+    }>;
+} | {
+    ok: false;
+    error: string;
+};
 /** Local ASR install status. */
 export interface LooklookAsrStatus {
     installed: boolean;
@@ -91,6 +108,31 @@ export type LooklookModalityResult = {
  */
 export declare class LooklookRemoteService extends TypertRemoteService {
     constructor(ctx: Context);
+    /** Read the three plugin-owned settings namespaces without exposing them as
+     * configurable LLM providers in the global model-provider picker. */
+    describeSettings(): Promise<LooklookSettingsResult>;
+    /** Update one plugin-owned settings namespace. */
+    updateSettings(payload: {
+        ns: string;
+        patch: Record<string, unknown>;
+    }): Promise<{
+        ok: true;
+    } | {
+        ok: false;
+        error: string;
+    }>;
+    /** Describe plugin-owned API-key references without returning values. */
+    describeCredentials(refs: string[]): Promise<LooklookCredentialsResult>;
+    /** Store one plugin-owned API key. The secret never returns over the wire. */
+    setCredential(payload: {
+        ref: string;
+        value: string;
+    }): Promise<{
+        ok: true;
+    } | {
+        ok: false;
+        error: string;
+    }>;
     /**
      * Probe one provider's `/models` endpoint. Uses the just-typed key when the
      * caller passes one (the settings editor has not saved yet); otherwise reads

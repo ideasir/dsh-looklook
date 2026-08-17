@@ -7,7 +7,7 @@
 
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
+import type { PluginSettingsClient } from './plugin-settings.ts'
 import { namespaceValueOf } from './settings-view.ts'
 
 /** Eye toggle state for one session. */
@@ -29,15 +29,15 @@ export interface EyeController {
 }
 
 /** Create the controller for one session. */
-export function createEyeController(api: IApiClient, sessionId: string): EyeController {
+export function createEyeController(api: PluginSettingsClient, sessionId: string): EyeController {
   const store = createSnapshotStore<EyeState>({ status: 'loading' })
   const refresh = async (): Promise<void> => {
-    const response = await api.settings.describe({})
-    if (!response.result.ok) {
+    const response = await api.describe()
+    if (!response.ok) {
       store.set({ status: 'ready', eye: 'on', unconfigured: true })
       return
     }
-    const vision = namespaceValueOf(response.result.value.namespaces, 'vision') as VisionSettingsView | undefined
+    const vision = namespaceValueOf(response.namespaces, 'vision') as VisionSettingsView | undefined
     const eye = vision?.sessionOverrides?.[sessionId] ?? 'on'
     const unconfigured = !(vision?.providers ?? []).some(provider => provider.enabled !== false)
     store.set({ status: 'ready', eye, unconfigured })
@@ -47,10 +47,7 @@ export function createEyeController(api: IApiClient, sessionId: string): EyeCont
     load: () => { void refresh() },
     toggle: (next) => {
       void (async () => {
-        await api.settings.update({
-          ns: 'vision',
-          patch: { sessionOverrides: { [sessionId]: next } },
-        })
+        await api.update('vision', { sessionOverrides: { [sessionId]: next } })
         void refresh()
       })()
     },

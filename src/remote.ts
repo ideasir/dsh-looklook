@@ -18,6 +18,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { readFile } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import { saveUpload, MAX_UPLOAD_BYTES, safeFileName, UPLOADS_DIR } from './upload.ts'
@@ -63,6 +64,17 @@ export type LooklookUploadResult =
   | { ok: true; path: string; name: string; size: number }
   | { ok: false; error: string }
 
+const LOOKLOOK_SETTINGS_NAMESPACES = new Set(['looklook', 'vision', 'looklook-audio'])
+const LOOKLOOK_CREDENTIAL_PREFIX = 'LOOKLOOK_'
+
+export type LooklookSettingsResult =
+  | { ok: true; value: unknown }
+  | { ok: false; error: string }
+
+export type LooklookCredentialsResult =
+  | { ok: true; credentials: Record<string, { configured: boolean; writable: boolean }> }
+  | { ok: false; error: string }
+
 /** Local ASR install status. */
 export interface LooklookAsrStatus {
   installed: boolean
@@ -97,6 +109,71 @@ const FETCH_REDIRECT = 'error' as const
 export class LooklookRemoteService extends TypertRemoteService {
   constructor(ctx: Context) {
     super(ctx, 'looklookRemote', { namespace: 'looklook' })
+  }
+
+  /** Read the three plugin-owned settings namespaces without exposing them as
+   * configurable LLM providers in the global model-provider picker. */
+  @Remote
+  async describeSettings(): Promise<LooklookSettingsResult> {
+    try {
+      const settings = this.ctx.get('settings')
+      if (settings === undefined) return { ok: false, error: '设置服务未就绪' }
+      const namespaces = [...LOOKLOOK_SETTINGS_NAMESPACES].map(ns => ({
+        ns,
+        value: settings.get(settingsNamespace(ns)),
+      }))
+      return { ok: true, value: { namespaces } }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
+  /** Update one plugin-owned settings namespace. */
+  @Remote
+  async updateSettings(payload: { ns: string; patch: Record<string, unknown> }): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+      if (!LOOKLOOK_SETTINGS_NAMESPACES.has(payload.ns)) return { ok: false, error: '不允许更新该设置命名空间' }
+      const settings = this.ctx.get('settings')
+      if (settings === undefined) return { ok: false, error: '设置服务未就绪' }
+      await settings.update(settingsNamespace(payload.ns), payload.patch)
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
+  /** Describe plugin-owned API-key references without returning values. */
+  @Remote
+  async describeCredentials(refs: string[]): Promise<LooklookCredentialsResult> {
+    try {
+      const credentials = this.ctx.get('credentials')
+      if (credentials === undefined) return { ok: false, error: '凭据服务未就绪' }
+      const result: Record<string, { configured: boolean; writable: boolean }> = {}
+      for (const ref of refs) {
+        if (!ref.startsWith(LOOKLOOK_CREDENTIAL_PREFIX)) continue
+        const info = await credentials.describe(credentialRef(ref))
+        result[ref] = { configured: info.configured, writable: info.writable }
+      }
+      return { ok: true, credentials: result }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
+  /** Store one plugin-owned API key. The secret never returns over the wire. */
+  @Remote
+  async setCredential(payload: { ref: string; value: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+      if (!payload.ref.startsWith(LOOKLOOK_CREDENTIAL_PREFIX) || payload.value.length === 0) {
+        return { ok: false, error: '不允许写入该凭据引用' }
+      }
+      const credentials = this.ctx.get('credentials')
+      if (credentials === undefined) return { ok: false, error: '凭据服务未就绪' }
+      await credentials.set(credentialRef(payload.ref), payload.value)
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
   }
 
   /**

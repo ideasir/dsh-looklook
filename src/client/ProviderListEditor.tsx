@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PluginSettingsClient } from './plugin-settings.ts'
 import {
   Button, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -40,8 +41,10 @@ export function credentialRefFor(id: string): string {
 
 /** Injected face for one provider-list editor. */
 export interface ProviderListEditorProps {
-  /** The wire API client. */
+  /** The wire API client for model discovery RPCs. */
   api: IApiClient
+  /** Plugin-owned settings and credential RPCs. */
+  pluginSettings: PluginSettingsClient
   /** Bound translate for the `looklook` namespace. */
   t: TranslateNS<'looklook'>
   /** Settings namespace to read/write (e.g. 'vision', 'looklook-audio'). */
@@ -135,7 +138,7 @@ const layout = {
  * mounts it once per namespace (visual / audio).
  */
 export function ProviderListEditor(props: ProviderListEditorProps) {
-  const { api, t, ns, title, intro, listModels, testModel, testLabel } = props
+  const { api, pluginSettings, t, ns, title, intro, listModels, testModel, testLabel } = props
   const [providers, setProviders] = useState<ProviderDraft[]>([])
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -151,18 +154,18 @@ export function ProviderListEditor(props: ProviderListEditorProps) {
 
   useEffect(() => {
     void (async () => {
-      const response = await api.settings.describe({})
-      if (response.result.ok) {
-        const value = namespaceValueOf(response.result.value.namespaces, ns) as NamespaceView | undefined
+      const response = await pluginSettings.describe()
+      if (response.ok) {
+        const value = namespaceValueOf(response.namespaces, ns) as NamespaceView | undefined
         const loaded = Array.isArray(value?.providers) ? value.providers : []
         setProviders(loaded)
         const refs = loaded.map(provider => credentialRefFor(provider.id))
         if (refs.length > 0) {
-          const cred = await api.credentials.describe({ refs })
-          if (cred.result.ok) {
+          const cred = await pluginSettings.describeCredentials(refs)
+          if (cred.ok) {
             const next: Record<string, boolean> = {}
             for (const provider of loaded) {
-              next[provider.id] = cred.result.value.credentials[credentialRefFor(provider.id)]?.configured === true
+              next[provider.id] = cred.credentials[credentialRefFor(provider.id)]?.configured === true
             }
             setKeyStates(next)
           }
@@ -278,19 +281,16 @@ export function ProviderListEditor(props: ProviderListEditorProps) {
       const nextProviders = addDraft === null ? providers : [...providers, addDraft]
       const freshKeys = nextProviders.filter(provider => provider.apiKey !== undefined && provider.apiKey.length > 0)
       for (const provider of freshKeys) {
-        const stored = await api.credentials.set({ ref: credentialRefFor(provider.id), value: provider.apiKey ?? '' })
-        if (!stored.result.ok) throw new Error(stored.result.error.message)
+        const stored = await pluginSettings.setCredential(credentialRefFor(provider.id), provider.apiKey ?? '')
+        if (!stored.ok) throw new Error(stored.error)
       }
-      const update = await api.settings.update({
-        ns,
-        patch: {
-          providers: nextProviders.map(({ id, name, baseURL, model, enabled }) => ({
-            id, name, baseURL, model, enabled,
-            apiKeyEnv: credentialRefFor(id),
-          })),
-        },
+      const update = await pluginSettings.update(ns, {
+        providers: nextProviders.map(({ id, name, baseURL, model, enabled }) => ({
+          id, name, baseURL, model, enabled,
+          apiKeyEnv: credentialRefFor(id),
+        })),
       })
-      if (!update.result.ok) throw new Error(update.result.error.message)
+      if (!update.ok) throw new Error(update.error)
       setProviders(nextProviders.map(provider => ({
         id: provider.id,
         name: provider.name,

@@ -25,6 +25,7 @@ import { VisionToggle, type VisionToggleInjected } from './VisionToggle.tsx'
 import { FileChips, type FileChipsInjected } from './FileChips.tsx'
 import { isUploadableName, isNativeImageName, uploadFile, type SessionModality, type EnvCheckItem, type EnvCheckReport } from './upload-shared.ts'
 import { en, zh, type LookLookKey } from './locales.ts'
+import type { PluginSettingsClient } from './plugin-settings.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -152,11 +153,52 @@ export function apply(ctx: ClientContext): void {
     return () => { dispose() }
   }, 'dsh-looklook: submit merge patch')
 
+  const pluginSettingsListeners = new Set<() => void>()
+  const pluginSettings: PluginSettingsClient = {
+    subscribe: (listener) => {
+      pluginSettingsListeners.add(listener)
+      return () => { pluginSettingsListeners.delete(listener) }
+    },
+    describe: async () => {
+      const remote = ctx.get('remote.looklook') as { describeSettings?: () => Promise<{ ok: boolean; value?: { ok: boolean; value?: { namespaces?: Array<{ ns: string; value: unknown }> }; error?: string }; error?: { message?: string } }> } | undefined
+      if (remote?.describeSettings === undefined) return { ok: false, error: '插件设置服务未就绪' }
+      const envelope = await remote.describeSettings()
+      const body = envelope.value
+      if (!envelope.ok || body?.ok !== true) return { ok: false, error: typeof envelope.error === 'string' ? envelope.error : body?.error ?? '读取插件设置失败' }
+      return { ok: true, namespaces: body.value?.namespaces ?? [] }
+    },
+    update: async (ns, patch) => {
+      const remote = ctx.get('remote.looklook') as { updateSettings?: (payload: { ns: string; patch: Record<string, unknown> }) => Promise<{ ok: boolean; value?: { ok: boolean; error?: string }; error?: { message?: string } }> } | undefined
+      if (remote?.updateSettings === undefined) return { ok: false, error: '插件设置服务未就绪' }
+      const envelope = await remote.updateSettings({ ns, patch })
+      const body = envelope.value
+      if (!envelope.ok || body?.ok !== true) return { ok: false, error: typeof envelope.error === 'string' ? envelope.error : body?.error ?? '更新插件设置失败' }
+      for (const listener of pluginSettingsListeners) listener()
+      return { ok: true }
+    },
+    describeCredentials: async (refs) => {
+      const remote = ctx.get('remote.looklook') as { describeCredentials?: (refs: string[]) => Promise<{ ok: boolean; value?: { ok: boolean; credentials?: Record<string, { configured: boolean; writable: boolean }>; error?: string }; error?: { message?: string } }> } | undefined
+      if (remote?.describeCredentials === undefined) return { ok: false, error: '插件凭据服务未就绪' }
+      const envelope = await remote.describeCredentials(refs)
+      const body = envelope.value
+      if (!envelope.ok || body?.ok !== true) return { ok: false, error: typeof envelope.error === 'string' ? envelope.error : body?.error ?? '读取插件凭据失败' }
+      return { ok: true, credentials: body.credentials ?? {} }
+    },
+    setCredential: async (ref, value) => {
+      const remote = ctx.get('remote.looklook') as { setCredential?: (payload: { ref: string; value: string }) => Promise<{ ok: boolean; value?: { ok: boolean; error?: string }; error?: { message?: string } }> } | undefined
+      if (remote?.setCredential === undefined) return { ok: false, error: '插件凭据服务未就绪' }
+      const envelope = await remote.setCredential({ ref, value })
+      const body = envelope.value
+      if (!envelope.ok || body?.ok !== true) return { ok: false, error: typeof envelope.error === 'string' ? envelope.error : body?.error ?? '保存插件凭据失败' }
+      return { ok: true }
+    },
+  }
+
   const eyes = new Map<string, EyeController>()
   const eyeFor = (sessionId: string): EyeController => {
     let controller = eyes.get(sessionId)
     if (controller === undefined) {
-      controller = createEyeController(connection.api, sessionId)
+      controller = createEyeController(pluginSettings, sessionId)
       controller.load()
       eyes.set(sessionId, controller)
     }
@@ -164,7 +206,7 @@ export function apply(ctx: ClientContext): void {
   }
 
   // Plugin master switch (one switch controls the whole plugin).
-  const features: FeatureController = createFeatureController(connection.api)
+  const features: FeatureController = createFeatureController(pluginSettings)
   features.load()
   const useFeaturesSnapshot = bindSnapshotSelector(features.store)
   /** Whether the plugin master switch is ON (gates the eye toggle, the
@@ -176,12 +218,16 @@ export function apply(ctx: ClientContext): void {
     (s: import('./feature-controller.ts').FeatureState) => s,
   ) as import('./feature-controller.ts').FeatureState
 
-  // Pushed invalidations refresh loaded controllers without polling.
+  // Pushed invalidations refresh loaded controllers without polling. The
+  // plugin-owned RPC path also emits through pluginSettings.subscribe below;
+  // this api-proxy event remains for external settings edits.
+  const refreshPluginState = (): void => {
+    for (const controller of eyes.values()) controller.load()
+    features.load()
+  }
+  pluginSettings.subscribe(refreshPluginState)
   ctx.effect(() => {
-    const dispose = ctx.remote.$on('settings/document-updated', () => {
-      for (const controller of eyes.values()) controller.load()
-      features.load()
-    })
+    const dispose = ctx.remote.$on('settings/document-updated', refreshPluginState)
     return () => { dispose() }
   }, 'dsh-looklook: settings invalidation fan-out')
 
@@ -328,6 +374,42 @@ export function apply(ctx: ClientContext): void {
     const mounting = ctx.remote.$mount({
       package: 'dsh-looklook',
       descriptors: [
+        {
+          id: 'looklook.describeSettings',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'describeSettings',
+          invocation: { kind: 'direct' },
+          parameters: [],
+          result: { mode: 'strict', typeSymbol: 'LooklookSettingsResult', schema: { parse: parseAsIs } },
+        },
+        {
+          id: 'looklook.updateSettings',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'updateSettings',
+          invocation: { kind: 'direct' },
+          parameters: [{ name: 'payload', wire: 'payload', source: 'json', codec: { mode: 'strict', typeSymbol: 'LooklookSettingsUpdate', schema: { parse: parseAsIs } } }],
+          result: { mode: 'strict', typeSymbol: 'LooklookSettingsUpdateResult', schema: { parse: parseAsIs } },
+        },
+        {
+          id: 'looklook.describeCredentials',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'describeCredentials',
+          invocation: { kind: 'direct' },
+          parameters: [{ name: 'refs', wire: 'refs', source: 'json', codec: { mode: 'strict', typeSymbol: 'LooklookCredentialRefs', schema: { parse: parseAsIs } } }],
+          result: { mode: 'strict', typeSymbol: 'LooklookCredentialsResult', schema: { parse: parseAsIs } },
+        },
+        {
+          id: 'looklook.setCredential',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'setCredential',
+          invocation: { kind: 'direct' },
+          parameters: [{ name: 'payload', wire: 'payload', source: 'json', codec: { mode: 'strict', typeSymbol: 'LooklookCredentialPayload', schema: { parse: parseAsIs } } }],
+          result: { mode: 'strict', typeSymbol: 'LooklookCredentialResult', schema: { parse: parseAsIs } },
+        },
         {
           id: 'looklook.listModels',
           service: 'looklookRemote',
@@ -761,6 +843,7 @@ export function apply(ctx: ClientContext): void {
     order: 30,
     inject: (): LooklookCardInjected => ({
       api: connection.api,
+      pluginSettings,
       t,
       features,
       useFeatures,

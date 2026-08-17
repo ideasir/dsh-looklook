@@ -9,6 +9,7 @@
  */
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client';
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots';
+import type { PluginSettingsClient } from './plugin-settings.ts';
 /** One provider under local edit. */
 export interface ProviderDraft {
     id: string;
@@ -23,8 +24,10 @@ export interface ProviderDraft {
 export declare function credentialRefFor(id: string): string;
 /** Injected face for one provider-list editor. */
 export interface ProviderListEditorProps {
-    /** The wire API client. */
+    /** The wire API client for model discovery RPCs. */
     api: IApiClient;
+    /** Plugin-owned settings and credential RPCs. */
+    pluginSettings: PluginSettingsClient;
     /** Bound translate for the `looklook` namespace. */
     t: TranslateNS<'looklook'>;
     /** Settings namespace to read/write (e.g. 'vision', 'looklook-audio'). */

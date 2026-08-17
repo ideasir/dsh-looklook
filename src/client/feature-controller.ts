@@ -7,7 +7,7 @@
 
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
+import type { PluginSettingsClient } from './plugin-settings.ts'
 import { namespaceValueOf } from './settings-view.ts'
 
 /** Master-switch state. */
@@ -28,22 +28,22 @@ export interface FeatureController {
 }
 
 /** Create the plugin master-switch controller. */
-export function createFeatureController(api: IApiClient): FeatureController {
+export function createFeatureController(api: PluginSettingsClient): FeatureController {
   const store = createSnapshotStore<FeatureState>({ status: 'loading' })
   const refresh = async (): Promise<void> => {
-    const response = await api.settings.describe({})
-    if (!response.result.ok) {
+    const response = await api.describe()
+    if (!response.ok) {
       store.set({ status: 'ready', enabled: true })
       return
     }
-    const value = namespaceValueOf(response.result.value.namespaces, 'looklook') as LooklookSettingsView | undefined
+    const value = namespaceValueOf(response.namespaces, 'looklook') as LooklookSettingsView | undefined
     store.set({
       status: 'ready',
       enabled: value?.enabled !== false,
     })
   }
   const update = async (patch: Record<string, boolean>): Promise<void> => {
-    await api.settings.update({ ns: 'looklook', patch })
+    await api.update('looklook', patch)
     void refresh()
   }
   return {

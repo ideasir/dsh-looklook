@@ -11,6 +11,7 @@
 import { useState } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PluginSettingsClient } from './plugin-settings.ts'
 import { Button, IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { FeatureController, FeatureState } from './feature-controller.ts'
 import { LooklookFeaturesSection, type FeaturesInjected } from './Features.tsx'
@@ -20,8 +21,10 @@ import type { EnvCheckItem, EnvCheckReport } from './upload-shared.ts'
 
 /** Injected face supplied by the plugin apply closure. */
 export interface LooklookCardInjected {
-  /** The wire API client. */
+  /** The wire API client for model discovery. */
   api: IApiClient
+  /** Plugin-owned settings and credential RPCs. */
+  pluginSettings: PluginSettingsClient
   /** Bound translate for the `looklook` namespace. */
   t: TranslateNS<'looklook'>
   /** Feature controller (image / video toggles). */
@@ -87,13 +90,13 @@ const css = {
 
 /** The plugin-configuration card body. */
 export function LooklookPluginCard(props: LooklookCardInjected) {
-  const { api, t, features, useFeatures, listModels, testVision, testAudio, asrStatus, asrInstall, envCheck, envRepair, usePluginEnabled } = props
+  const { api, pluginSettings, t, features, useFeatures, listModels, testVision, testAudio, asrStatus, asrInstall, envCheck, envRepair, usePluginEnabled } = props
   const [open, setOpen] = useState(false)
   const [envOpen, setEnvOpen] = useState(false)
   // Hook order stays stable: both hooks run before any conditional return.
   const pluginEnabled = usePluginEnabled()
   const featuresProps: FeaturesInjected = { api, t, features, useFeatures }
-  const modelProps: ModelSettingsInjected = { api, t, listModels, testVision, testAudio, asrStatus, asrInstall }
+  const modelProps: ModelSettingsInjected = { api, pluginSettings, t, listModels, testVision, testAudio, asrStatus, asrInstall }
   const envProps: EnvCheckInjected = { t, envCheck, envRepair }
   const title = t('card.title')
   return (
