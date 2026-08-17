@@ -19,6 +19,8 @@ export interface PendingFile {
   name: string
   path?: string
   size: number
+  /** Browser-only object URL for an image thumbnail; never sent to the host. */
+  previewUrl?: string
   /** Whether the file is still uploading. */
   uploading?: boolean
   /** Upload progress 0–100. */

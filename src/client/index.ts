@@ -597,7 +597,13 @@ export function apply(ctx: ClientContext): void {
   const stageUploads = (sessionId: string, files: File[], controller: PendingFilesController): void => {
     void (async () => {
       for (const file of files) {
-        const staged = { name: file.name, size: file.size, uploading: true, progress: 0 }
+        const staged = {
+          name: file.name,
+          size: file.size,
+          ...(file.type.startsWith('image/') ? { previewUrl: URL.createObjectURL(file) } : {}),
+          uploading: true,
+          progress: 0,
+        }
         controller.add(sessionId, staged)
         const id = controller.get(sessionId)[controller.get(sessionId).length - 1]?.id
         if (id === undefined) continue

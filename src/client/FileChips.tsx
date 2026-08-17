@@ -10,6 +10,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PendingFilesController, PendingFilesState } from './pending-files.ts'
 import { formatSize } from './format.ts'
 import { FileTypeIcon } from './FileTypeIcon.tsx'
+import { useEffect, useRef } from 'react'
 
 /** Injected face supplied by the plugin apply closure. */
 export interface FileChipsInjected {
@@ -32,6 +33,17 @@ export function FileChips(props: FileChipsInjected) {
     | ReturnType<PendingFilesController['get']>
     | undefined
   const list = files ?? []
+  const previewUrls = useRef(new Set<string>())
+  useEffect(() => {
+    const current = new Set(list.map(file => file.previewUrl).filter((url): url is string => url !== undefined))
+    for (const url of previewUrls.current) {
+      if (!current.has(url)) URL.revokeObjectURL(url)
+    }
+    previewUrls.current = current
+  }, [list])
+  useEffect(() => () => {
+    for (const url of previewUrls.current) URL.revokeObjectURL(url)
+  }, [])
   if (list.length === 0) return null
   return (
     <>
@@ -79,6 +91,7 @@ export function FileChips(props: FileChipsInjected) {
           {file.uploading === true ? (
             // Spinner + progress while uploading.
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+              {file.previewUrl !== undefined && <img src={file.previewUrl} alt="" style={{ width: 30, height: 30, objectFit: 'cover', borderRadius: 5, flex: 'none' }} />}
               <span style={{
                 width: 14,
                 height: 14,
@@ -111,9 +124,13 @@ export function FileChips(props: FileChipsInjected) {
             </span>
           ) : (
             <>
-              <span style={{ display: 'grid', placeItems: 'center', flex: 'none', color: 'var(--dsw-alias-brand-primary)' }}>
-                <FileTypeIcon name={file.name} size={16} />
-              </span>
+              {file.previewUrl !== undefined ? (
+                <img src={file.previewUrl} alt="" style={{ width: 30, height: 30, objectFit: 'cover', borderRadius: 5, flex: 'none' }} />
+              ) : (
+                <span style={{ display: 'grid', placeItems: 'center', flex: 'none', color: 'var(--dsw-alias-brand-primary)' }}>
+                  <FileTypeIcon name={file.name} size={20} />
+                </span>
+              )}
               <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {file.name} <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{formatSize(file.size)}</span>
