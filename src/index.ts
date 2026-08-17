@@ -31,6 +31,7 @@ import { Config, LooklookConfig, AudioConfig, looklookEnabled, type VisionSettin
 import { registerSeeTool } from './see-tool.ts'
 import { registerZipTool } from './zip-tool.ts'
 import { LooklookRemoteService } from './remote.ts'
+import { LOOKLOOK_SKILL } from './looklook-skill.ts'
 import type {} from './types.ts'
 
 export { Config } from './settings.ts'
@@ -78,7 +79,7 @@ export function apply(ctx: Context, config: VisionSettings): void {
   ctx.systemPrompt.section({
     name: 'looklook:vision',
     order: 200,
-    text: '用户发送的图片/视频/文件会保存到会话工作区的 .uploads/ 目录，消息中会带有文件路径。当需要了解任何内容时，调用 looklook_see 工具：source 填消息里的文件路径或引用，question 根据用户的实际问题填写（用户问什么就针对性地问什么，不要一律要求全量描述）。',
+    text: LOOKLOOK_SKILL,
   })
 
   // ZIP extraction tool (vendored from dsh-zip): extract operation only —

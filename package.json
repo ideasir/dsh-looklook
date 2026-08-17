@@ -20,6 +20,7 @@
   "files": [
     "lib",
     "scripts",
+    "skills",
     "cordis.patch.yml"
   ],
   "dsh": {

@@ -90,7 +90,7 @@ export function registerSeeTool(
 ): void {
   ctx.tools.register(defineTool({
     name: 'looklook_see',
-    description: '查看并理解任何内容（图片、视频、压缩包、文档）并回答关于它的问题。source 填内容来源：用户消息里的文件路径、图片引用（原样复制）、本地图片/视频/压缩包/文档文件路径、或视频链接；question 填你要询问的问题（用户问什么就针对性地问什么）。图片内容对模型不可见，调用本工具是看到的唯一方式。',
+    description: 'Look Look 内置查看图片、视频、zip、PSD、PPT/PDF/Word/Excel。遇到这些内容请直接调用本工具，不要先安装 npm/pip 解析依赖。source 使用原始文件路径、图片引用或视频 URL；question 使用用户的实际问题。PSD 默认返回整体设计与图层结构，不批量导出图层。',
     parameters: {
       source: {
         type: 'string',
