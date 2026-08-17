@@ -28,6 +28,9 @@ const HIDE_END = '【looklook:结束】'
 /** Host file marker: 「【looklook:file】{json}【looklook:file】」. */
 const FILE_MARKER_RE = /【looklook:file】([\s\S]*?)【looklook:file】/g
 
+/** Clean upload note written by the current client: 「[类型]name 排队中...」. */
+const CLEAN_NOTE_RE = /\[(图片|视频|压缩包|文档|文件)\]([^\n]+?)(?:\s*排队中\.\.\.)?\s*(?=\n|$)/g
+
 /** One staged file's metadata embedded in the marker. */
 interface FileMeta {
   name: string
@@ -301,6 +304,10 @@ export function LooklookUserMessageNodeView(props: UserMessageNodeProps) {
       const parsed = parseMarkerRef(payload)
       const withMeta = embeddedRefs.get(parsed.attachmentId)
       attachments.push(withMeta ?? parsed)
+      return ''
+    })
+    .replace(CLEAN_NOTE_RE, (_all, _label: string, name: string) => {
+      files.push({ name: name.trim(), path: '', size: 0 })
       return ''
     })
   const trimmed = cleaned.trim()
