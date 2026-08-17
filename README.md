@@ -2,15 +2,11 @@
 
 ## 安装插件
 
-**注意：Look Look 尚未发布到 npm 仓库，因此不能直接使用 `dsh plugin add dsh-looklook` 安装。** 请使用以下两种方式之一。
-
-### 方式一：从 GitHub 安装（推荐）
+### 从 GitHub 安装
 
 ```bash
 dsh plugin --profile web add github:ideasir/dsh-looklook
 ```
-
-如果安装过程中提示 `allowBuilds` 权限错误，请按终端提示的内容，将对应的 `dsh-looklook@...` 条目添加到 profile 的 `pnpm-workspace.yaml` 的 `allowBuilds` 字段中，然后重新执行安装命令。
 
 安装完成后重启 DSH Web：
 
@@ -25,18 +21,6 @@ Ctrl + Shift + R
 ```
 
 > 插件的宿主代码需要重启 `dsh web` 才会生效；客户端界面通常在刷新页面后生效。
-
-### 方式二：本地开发方式
-
-如果已经克隆了仓库：
-
-```bash
-cd /vol1/1000/DeepSeek/dsh-looklook
-npm install
-npm run build
-```
-
-然后将构建产物链接或复制到 DSH profile 中。
 
 ### 发布后
 
