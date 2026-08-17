@@ -90,13 +90,16 @@ def pick_langs(pref):
     return out
 
 
-def extract_meta(info):
+def extract_meta(info, source_url=None):
     def clean(v):
         if isinstance(v, str):
             return v.strip()[:4000]
         return v
+    title = clean(info.get('title'))
+    if not title:
+        title = source_url or '未命名视频'
     return {
-        'title': clean(info.get('title')),
+        'title': title,
         'uploader': clean(info.get('uploader')),
         'uploader_id': clean(info.get('uploader_id')),
         'extractor': info.get('extractor'),
@@ -137,6 +140,17 @@ def base_opts(cookies_browser=None, cookies_file=None, proxy=None):
     if proxy:
         opts['proxy'] = proxy
     return opts
+
+
+def configured_cookie_options(opts):
+    """Read optional cookie sources without ever logging their contents.
+
+    Browser name is intentionally explicit (edge/chrome/firefox); a cookie
+    file must be supplied by the user through an environment variable.
+    """
+    browser = opts.get('cookies_browser') or os.environ.get('LOOKLOOK_COOKIES_BROWSER')
+    cookie_file = opts.get('cookies_file') or os.environ.get('LOOKLOOK_COOKIES_FILE')
+    return browser or None, cookie_file or None
 
 
 def platform_extra_opts(url, proxy=None):
@@ -627,8 +641,7 @@ def main():
     want_transcript = opts.get('transcript', True)
     want_frames = int(opts.get('frames', 0) or 0)
     lang = opts.get('lang', 'zh')
-    cookies_browser = opts.get('cookies_browser') or None
-    cookies_file = opts.get('cookies_file') or None
+    cookies_browser, cookies_file = configured_cookie_options(opts)
     proxy = opts.get('proxy') or None
     max_chars = int(opts.get('max_chars', 20000) or 20000)
     warnings = []
@@ -651,13 +664,16 @@ def main():
             result['meta'] = douyin_meta_from_detail(detail)
         except Exception as e:  # noqa: BLE001
             result['ok'] = False
-            result['error'] = 'douyin metadata extraction failed: %s' % e
+            message = str(e)
+            if 'anti-bot' in message or 'no aweme_detail' in message:
+                message += '；抖音阻止了无头浏览器，请在本机浏览器完成登录或稍后重试'
+            result['error'] = 'douyin metadata extraction failed: %s' % message
             print(json.dumps(result, ensure_ascii=False))
             return
     else:
         try:
             info = get_info(url, cookies_browser=cookies_browser, cookies_file=cookies_file, proxy=proxy)
-            result['meta'] = extract_meta(info)
+            result['meta'] = extract_meta(info, url)
         except Exception as e:  # noqa: BLE001
             result['ok'] = False
             result['error'] = 'metadata extraction failed: %s' % e

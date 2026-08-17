@@ -677,7 +677,7 @@ function composeReport(
   if (out.meta !== undefined && Object.keys(out.meta).length > 0) {
     const m = out.meta
     parts.push([
-      `视频标题：${m.title ?? '未知'}`,
+      `视频标题：${m.title ?? '未命名视频'}`,
       m.uploader !== undefined ? `UP主/作者：${m.uploader}` : '',
       typeof m.duration === 'number' && m.duration > 0 ? `时长：${Math.round(m.duration)}秒` : '',
       m.source === 'local-file' ? `文件：${m.path}` : m.webpage_url !== undefined ? `链接：${m.webpage_url}` : '',
