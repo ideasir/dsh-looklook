@@ -36,14 +36,25 @@ export interface ModelSettingsInjected {
   >
   /** Read the local ASR install state through the authorized RPC. */
   asrStatus: () => Promise<AsrStatus>
-  /** Trigger the local ASR install through the authorized RPC. */
-  asrInstall: () => Promise<{ ok: true; phase: string; already: boolean } | { ok: false; error: string }>
+  /** Trigger the local ASR install for one model through the authorized RPC. */
+  asrInstall: (model: string) => Promise<{ ok: true; phase: string; already: boolean } | { ok: false; error: string }>
+}
+
+/** One selectable ASR model (from the host). */
+export interface AsrModelOption {
+  id: string
+  name: string
+  sizeLabel: string
 }
 
 /** Local ASR install status (from the host RPC). */
 export interface AsrStatus {
   installed: boolean
   phase: string
+  /** Currently installed model id ('' when none). */
+  model: string
+  /** Selectable model sizes. */
+  options: AsrModelOption[]
   error?: string | null
 }
 
@@ -69,15 +80,50 @@ const css = {
     fontSize: 12,
     lineHeight: '18px',
   },
+  // LocalAsrCard is a column card once model selection is shown.
+  asrCardCol: {
+    border: '1px solid var(--dsw-alias-border-l2)',
+    borderRadius: 12,
+    padding: '12px 14px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+    color: 'var(--dsw-alias-label-primary)',
+  },
+  asrHead: { display: 'flex', alignItems: 'flex-start', gap: 12 },
+  asrModels: { display: 'flex', flexDirection: 'column', gap: 2 },
+  asrModelRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '3px 4px',
+    borderRadius: 6,
+    cursor: 'pointer',
+  },
+  asrModelName: { fontSize: 12, lineHeight: '18px', fontWeight: 500 },
+  asrModelSize: { fontSize: 11, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)' },
+  asrCurrentTag: {
+    flex: 'none',
+    padding: '0 8px',
+    border: '1px solid var(--dsw-alias-border-l2)',
+    borderRadius: 999,
+    fontSize: 10,
+    lineHeight: '16px',
+    color: 'var(--dsw-alias-label-tertiary)',
+  },
+  asrActions: { display: 'flex', justifyContent: 'flex-end' },
 } as const
 
-/** One-click local ASR install card (all calls ride the authorized RPC). */
+/** One-click local ASR install card (all calls ride the authorized RPC).
+ *  Model is selectable; the host keeps only ONE model on disk (installing a
+ *  different size purges the previous one), so the card also offers "换装". */
 function LocalAsrCard({ asrStatus, asrInstall, t }: {
   asrStatus: ModelSettingsInjected['asrStatus']
   asrInstall: ModelSettingsInjected['asrInstall']
   t: TranslateNS<'looklook'>
 }) {
   const [status, setStatus] = useState<AsrStatus | null>(null)
+  const [selectedModel, setSelectedModel] = useState<string>('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -93,15 +139,30 @@ function LocalAsrCard({ asrStatus, asrInstall, t }: {
 
   useEffect(() => { void refresh() }, [asrStatus])
 
+  // Default the selection to the installed model, else the recommended
+  // 'small', else the first option. Runs only until a choice is made.
+  useEffect(() => {
+    if (selectedModel !== '' || status === null) return
+    const initial = status.model !== ''
+      ? status.model
+      : status.options.find(o => o.id === 'small')?.id
+        ?? status.options[0]?.id
+        ?? ''
+    if (initial !== '') setSelectedModel(initial)
+  }, [status, selectedModel])
+
   // Holds the active poll interval so the unmount effect can stop it.
   const pollTimerRef = useRef<number | null>(null)
 
-  const install = async (): Promise<void> => {
+  const install = async (model: string): Promise<void> => {
+    if (model === '') return
     setBusy(true)
     setError(null)
     try {
-      const body = await asrInstall()
+      const body = await asrInstall(model)
       if (!body.ok) throw new Error(body.error ?? '启动安装失败')
+      // already:true = same model already installed: nothing to wait for.
+      if (body.already) { await refresh(); return }
       // Poll until done/failed. Read the LATEST status from each poll's own
       // response (not the render-closure status — the closure value is stale
       // and would never satisfy the terminal check, H4 fix). The interval is
@@ -148,10 +209,11 @@ function LocalAsrCard({ asrStatus, asrInstall, t }: {
   }, [])
 
   const phaseLabel = (phase: string): string => {
+    const size = status?.options.find(o => o.id === selectedModel)?.sizeLabel
     switch (phase) {
       case 'checking': return '环境检查中…'
       case 'installing-deps': return '安装依赖中…'
-      case 'downloading-model': return '下载模型中…（约 1.5GB，视网速而定）'
+      case 'downloading-model': return `下载模型中…（${size ?? '视网速而定'}）`
       case 'writing': return '写入本地服务…'
       case 'done': return '已就绪'
       case 'failed': return '安装失败'
@@ -160,28 +222,63 @@ function LocalAsrCard({ asrStatus, asrInstall, t }: {
   }
 
   const installed = status?.installed === true || status?.phase === 'done'
+  const installedOption = status?.options.find(o => o.id === (status?.model ?? ''))
+  const canSwitch = installed && selectedModel !== '' && selectedModel !== status?.model
+  const options = status?.options ?? []
 
   return (
-    <div style={css.asrCard}>
-      <div style={css.asrText}>
-        <span style={css.asrTitle}>{t('asr.local.title')}</span>
-        <span style={css.asrDesc}>
-          {status === null
-            ? t('asr.local.checking')
-            : installed
-              ? t('asr.local.ready')
-              : phaseLabel(status.phase)}
-        </span>
-        {error !== null && <span style={css.asrDesc}>{error}</span>}
-        {status?.error !== undefined && status.error !== null && status.error !== ''
-          && <span style={css.asrDesc}>{status.error}</span>}
+    <div style={css.asrCardCol}>
+      <div style={css.asrHead}>
+        <div style={css.asrText}>
+          <span style={css.asrTitle}>{t('asr.local.title')}</span>
+          <span style={css.asrDesc}>
+            {status === null
+              ? t('asr.local.checking')
+              : installed
+                ? `${t('asr.local.ready')}${installedOption ? ` · ${installedOption.name}（${installedOption.sizeLabel}）` : ''}`
+                : phaseLabel(status.phase)}
+          </span>
+          {error !== null && <span style={css.asrDesc}>{error}</span>}
+          {status?.error !== undefined && status.error !== null && status.error !== ''
+            && <span style={css.asrDesc}>{status.error}</span>}
+        </div>
+        {installed && <span style={css.asrBadge}>{t('asr.local.readyBadge')}</span>}
       </div>
-      {!installed && (
-        <Button variant="outline" size="sm" disabled={busy} onClick={() => void install()}>
-          {busy ? '…' : t('asr.local.install')}
-        </Button>
+      {options.length > 0 && (
+        <div style={css.asrModels}>
+          {options.map(opt => {
+            const isCurrent = installed && opt.id === status?.model
+            const isSel = opt.id === selectedModel
+            return (
+              <label key={opt.id} style={css.asrModelRow}>
+                <input
+                  type="radio"
+                  name="looklook-asr-model"
+                  checked={isSel}
+                  disabled={busy}
+                  onChange={() => setSelectedModel(opt.id)}
+                />
+                <span style={css.asrModelName}>{opt.name}</span>
+                <span style={css.asrModelSize}>{opt.sizeLabel}</span>
+                {isCurrent && <span style={css.asrCurrentTag}>当前</span>}
+              </label>
+            )
+          })}
+        </div>
       )}
-      {installed && <span style={css.asrBadge}>{t('asr.local.readyBadge')}</span>}
+      <div style={css.asrActions}>
+        {!installed ? (
+          <Button variant="outline" size="sm" disabled={busy || selectedModel === ''}
+            onClick={() => void install(selectedModel)}>
+            {busy ? '…' : t('asr.local.install')}
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" disabled={busy || !canSwitch}
+            onClick={() => { if (canSwitch) void install(selectedModel) }}>
+            {busy ? '…' : canSwitch ? '换装模型' : t('asr.local.readyBadge')}
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

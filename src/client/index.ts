@@ -558,10 +558,10 @@ export function apply(ctx: ClientContext): void {
   }
 
   /** Read the local ASR install state through the authorized RPC. */
-  const asrStatus = async (): Promise<{ installed: boolean; phase: string; model: string; error: string | null }> => {
+  const asrStatus = async (): Promise<{ installed: boolean; phase: string; model: string; options: { id: string; name: string; sizeLabel: string }[]; error: string | null }> => {
     const remote = ctx.get('remote.looklook') as {
       asrStatus?: () => Promise<
-        { ok: boolean; value?: { installed: boolean; phase: string; model: string; error: string | null } }
+        { ok: boolean; value?: { installed: boolean; phase: string; model: string; options: { id: string; name: string; sizeLabel: string }[]; error: string | null } }
       >
     } | undefined
     if (remote?.asrStatus === undefined) throw new Error('ASR 状态服务未就绪')
@@ -569,18 +569,26 @@ export function apply(ctx: ClientContext): void {
     if (!envelope.ok) throw new Error('ASR 状态查询失败')
     const value = envelope.value
     if (value === undefined) throw new Error('ASR 状态查询失败')
-    return { installed: value.installed === true, phase: value.phase, model: value.model, error: value.error ?? null }
+    return {
+      installed: value.installed === true,
+      phase: value.phase,
+      model: value.model,
+      options: Array.isArray(value.options) ? value.options : [],
+      error: value.error ?? null,
+    }
   }
 
-  /** Trigger the local ASR install through the authorized RPC. */
-  const asrInstall = async (): Promise<{ ok: true; phase: string; already: boolean } | { ok: false; error: string }> => {
+  /** Trigger the local ASR install for one model through the authorized RPC.
+   *  The model is EXCLUSIVE on the host: installing a different size purges
+   *  the previous one. */
+  const asrInstall = async (model: string): Promise<{ ok: true; phase: string; already: boolean } | { ok: false; error: string }> => {
     const remote = ctx.get('remote.looklook') as {
-      asrInstall?: () => Promise<
+      asrInstall?: (payload: { model: string }) => Promise<
         { ok: boolean; value?: { ok: boolean; phase: string; already: boolean; error?: string }; error?: { message?: string } }
       >
     } | undefined
     if (remote?.asrInstall === undefined) return { ok: false, error: 'ASR 安装服务未就绪' }
-    const envelope = await remote.asrInstall()
+    const envelope = await remote.asrInstall({ model })
     if (!envelope.ok) {
       return {
         ok: false,

@@ -25,9 +25,10 @@ import {
   localAsrReady,
   performInstall,
   readReadyMarker,
+  installedAsrModel,
   currentInstallPhase,
   currentInstallError,
-  LOCAL_ASR_MODEL,
+  ASR_MODEL_OPTIONS,
   type AsrInstallPhase,
 } from './asr-install.ts'
 import { runEnvCheck, repairEnv, type EnvCheckReport, type EnvCheckItem } from './env-check.ts'
@@ -66,8 +67,17 @@ export type LooklookUploadResult =
 export interface LooklookAsrStatus {
   installed: boolean
   phase: AsrInstallPhase
+  /** Currently installed model id ('' when none). */
   model: string
+  /** Selectable model options (id/name/size). */
+  options: Array<{ id: string; name: string; sizeLabel: string }>
   error: string | null
+}
+
+/** One ASR install trigger request. */
+export interface LooklookAsrInstallPayload {
+  /** Desired model id (tiny/base/small/medium/large-v3); default small. */
+  model?: string
 }
 
 /** Session modality probe outcome. */
@@ -102,7 +112,8 @@ export class LooklookRemoteService extends TypertRemoteService {
     baseURL: string
     apiKeyEnv: string
     apiKey?: string
-  }): Promise<LooklookListModelsResult> {    let key = provider.apiKey
+  }): Promise<LooklookListModelsResult> {
+    let key = provider.apiKey
     if (key === undefined || key.length === 0) {
       const credentials = this.ctx.get('credentials')
       key = credentials === undefined
@@ -160,22 +171,27 @@ export class LooklookRemoteService extends TypertRemoteService {
   @Remote
   async asrStatus(): Promise<LooklookAsrStatus> {
     const installed = await localAsrReady()
+    const currentModel = await installedAsrModel()
     return {
       installed,
       phase: installed ? 'done' : currentInstallPhase(),
-      model: LOCAL_ASR_MODEL,
+      model: currentModel ?? '',
+      options: ASR_MODEL_OPTIONS.map(({ id, name, sizeLabel }) => ({ id, name, sizeLabel })),
       error: currentInstallError(),
     }
   }
 
   /**
-   * Trigger the local ASR install (idempotent). Returns the current phase
-   * after starting or acknowledging; the client polls asrStatus for progress.
+   * Trigger the local ASR install for one model (idempotent per model). The
+   * model is EXCLUSIVE: installing a new size purges the previous one.
+   * Returns the current phase after starting or acknowledging; the client
+   * polls asrStatus for progress.
    */
   @Remote
-  async asrInstall(): Promise<{ ok: true; phase: AsrInstallPhase; already: boolean } | { ok: false; error: string }> {
+  async asrInstall(payload?: LooklookAsrInstallPayload): Promise<{ ok: true; phase: AsrInstallPhase; already: boolean } | { ok: false; error: string }> {
     try {
-      const outcome = await startInstallIfNeeded()
+      const model = payload?.model ?? undefined
+      const outcome = await startInstallIfNeeded(model)
       return { ok: true, ...outcome }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -417,15 +433,29 @@ function mediaTypeOfUpload(name: string): string | undefined {
 
 // ── ASR install trigger (single installer at a time; state lives in asr-install.ts) ──
 
-/** Start the install if not already running; returns (phase, already). */
-async function startInstallIfNeeded(): Promise<{ phase: AsrInstallPhase; already: boolean }> {
-  if (currentInstallPhase() === 'done' || (await localAsrReady())) {
+/** Start the install for one model; returns (phase, already).
+ * Rules:
+ * - already done with the SAME model → already:true;
+ * - already done with a DIFFERENT model → swap (purge old, install new);
+ * - a mid-phase install is refused (single installer at a time);
+ * - otherwise start a fresh install. */
+async function startInstallIfNeeded(model?: string): Promise<{ phase: AsrInstallPhase; already: boolean }> {
+  const currentModel = await installedAsrModel()
+  const ready = await localAsrReady()
+  // Same model already installed.
+  if (ready && (model === undefined || model === currentModel)) {
     return { phase: 'done', already: true }
   }
+  // Already installed but the user asked for a DIFFERENT size → swap.
+  if (ready && model !== undefined && model !== currentModel) {
+    void performInstall(model)
+    return { phase: 'checking', already: false }
+  }
+  // A mid-phase install is running → refuse.
   if (currentInstallPhase() !== 'none' && currentInstallPhase() !== 'failed') {
     return { phase: currentInstallPhase(), already: true }
   }
-  void performInstall()
+  void performInstall(model)
   return { phase: 'checking', already: false }
 }
 

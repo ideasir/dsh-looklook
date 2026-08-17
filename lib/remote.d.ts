@@ -60,8 +60,20 @@ export type LooklookUploadResult = {
 export interface LooklookAsrStatus {
     installed: boolean;
     phase: AsrInstallPhase;
+    /** Currently installed model id ('' when none). */
     model: string;
+    /** Selectable model options (id/name/size). */
+    options: Array<{
+        id: string;
+        name: string;
+        sizeLabel: string;
+    }>;
     error: string | null;
+}
+/** One ASR install trigger request. */
+export interface LooklookAsrInstallPayload {
+    /** Desired model id (tiny/base/small/medium/large-v3); default small. */
+    model?: string;
 }
 /** Session modality probe outcome. */
 export type LooklookModalityResult = {
@@ -106,10 +118,12 @@ export declare class LooklookRemoteService extends TypertRemoteService {
     /** Report the local ASR install state (ready marker + in-memory phase). */
     asrStatus(): Promise<LooklookAsrStatus>;
     /**
-     * Trigger the local ASR install (idempotent). Returns the current phase
-     * after starting or acknowledging; the client polls asrStatus for progress.
+     * Trigger the local ASR install for one model (idempotent per model). The
+     * model is EXCLUSIVE: installing a new size purges the previous one.
+     * Returns the current phase after starting or acknowledging; the client
+     * polls asrStatus for progress.
      */
-    asrInstall(): Promise<{
+    asrInstall(payload?: LooklookAsrInstallPayload): Promise<{
         ok: true;
         phase: AsrInstallPhase;
         already: boolean;

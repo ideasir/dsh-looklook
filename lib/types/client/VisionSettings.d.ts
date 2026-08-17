@@ -59,8 +59,8 @@ export interface ModelSettingsInjected {
     }>;
     /** Read the local ASR install state through the authorized RPC. */
     asrStatus: () => Promise<AsrStatus>;
-    /** Trigger the local ASR install through the authorized RPC. */
-    asrInstall: () => Promise<{
+    /** Trigger the local ASR install for one model through the authorized RPC. */
+    asrInstall: (model: string) => Promise<{
         ok: true;
         phase: string;
         already: boolean;
@@ -69,10 +69,20 @@ export interface ModelSettingsInjected {
         error: string;
     }>;
 }
+/** One selectable ASR model (from the host). */
+export interface AsrModelOption {
+    id: string;
+    name: string;
+    sizeLabel: string;
+}
 /** Local ASR install status (from the host RPC). */
 export interface AsrStatus {
     installed: boolean;
     phase: string;
+    /** Currently installed model id ('' when none). */
+    model: string;
+    /** Selectable model sizes. */
+    options: AsrModelOption[];
     error?: string | null;
 }
 /** The model-configuration body (visual + audio sections). */
