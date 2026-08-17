@@ -217,8 +217,10 @@ function checkVideoProxy(): EnvCheckItem {
   return {
     id: 'proxy',
     label: '网络代理（视频链接）',
-    status: configured ? 'ok' : 'missing',
-    detail: configured ? '已检测到代理配置（视频链接将尝试使用）' : '未检测到代理配置',
+    // Proxy is optional: its absence must not make the whole environment
+    // check fail for local videos or platforms reachable without a proxy.
+    status: 'ok',
+    detail: configured ? '已检测到代理配置（视频链接将尝试使用）' : '未检测到代理配置（本地视频和直连平台仍可用）',
     repairable: false,
     ...configured ? {} : { guidance: 'YouTube 等境外视频需要可用代理。可配置 DISCORD_PROXY、HTTPS_PROXY、HTTP_PROXY 或 ALL_PROXY 后重启 DSH。' },
   }

@@ -2,6 +2,7 @@ import { buildImageToolReference, imageMarker, rewriteImagesToToolReferences, re
 import { apply } from "../lib/index.js";
 import { readFileSync } from "node:fs";
 import { configuredVideoProxy } from "../lib/video-tool.js";
+import { runEnvCheck } from "../lib/env-check.js";
 
 // 1) tool reference text: hidden wrapper + marker
 const image = { type: "image", attachment: { attachmentId: "sha256:abc", mediaType: "image/png", bytes: 100, width: 10, height: 10 } };

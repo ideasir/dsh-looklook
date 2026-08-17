@@ -97,7 +97,7 @@ def extract_meta(info, source_url=None):
         return v
     title = clean(info.get('title'))
     if not title:
-        title = source_url or '未命名视频'
+        title = (source_url or '未命名视频')[:4000]
     return {
         'title': title,
         'uploader': clean(info.get('uploader')),
