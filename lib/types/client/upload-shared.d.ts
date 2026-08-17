@@ -33,6 +33,7 @@ export interface LooklookUploadRemote {
         value?: {
             ok: boolean;
             path?: string;
+            name?: string;
             error?: string;
         };
         error?: {

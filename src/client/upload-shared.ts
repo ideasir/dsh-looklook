@@ -56,7 +56,7 @@ export function fileToBase64(file: File): Promise<string> {
 /** The remote surface the upload RPC lives on. */
 export interface LooklookUploadRemote {
   upload?(payload: { sessionId: string; name: string; data: string }): Promise<
-    { ok: boolean; value?: { ok: boolean; path?: string; error?: string }; error?: { message?: string } }
+    { ok: boolean; value?: { ok: boolean; path?: string; name?: string; error?: string }; error?: { message?: string } }
   >
 }
 
@@ -81,7 +81,7 @@ export async function uploadFile(
   }
   const business = envelope.value
   if (business?.ok === true && business.path !== undefined) {
-    return { path: business.path, name: file.name }
+    return { path: business.path, name: business.name ?? file.name }
   }
   throw new Error(typeof business?.error === 'string' ? business.error : '上传失败')
 }
