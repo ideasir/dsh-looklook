@@ -175,6 +175,7 @@ async function identifyBackgroundMusic(
               { type: 'input_audio', input_audio: { data: base64, format } },
             ],
           }],
+          max_tokens: 200,
         }),
       })
       if (!response.ok) continue

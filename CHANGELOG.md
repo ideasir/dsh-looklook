@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0] - 2026-08-19
+
+### 适配
+- **升级 peerDependencies 至 DSH v0.1.0-rc.7**：所有 `@deepseek-ai/*` 依赖从 `^0.1.0-rc.6` 升级到 `^0.1.0-rc.7`，确保与 DSH rc.7 完全兼容（包括 node-pty 1.2 beta、max-tokens 截断修复、大历史分页栈溢出修复等底层变更）。
+- **升级 devDependencies 至 DSH v0.1.0-rc.7**：构建环境与运行时保持一致。
+- **升级 `@deepseek-ai/dsh-timeout` 依赖**：从 `^0.1.0-rc.6` 升级到 `^0.1.0-rc.7`。
+
+### 修复
+- **PPT 背景音乐识别缺失 `max_tokens` 参数**：`identifyBackgroundMusic` 向音频模型发送请求时未设置 `max_tokens`，部分 OpenAI-compatible 提供商可能因此拒绝请求。现已补充 `max_tokens: 200`。
+
+### 说明
+- rc.7 新增的「各插件可自行注册设置卡片」机制，Look Look 已通过 `settings.plugin.item` slot 正确注册，无需额外适配。
+- rc.7 新增的「提问卡片支持折叠并保留草稿」与 pending files 机制兼容，已验证无冲突。
+- README 中最低版本要求已更新为 `v0.1.0-rc.7`。
+
 ## [0.2.1] - 2026-08-17
 
 ### 修复

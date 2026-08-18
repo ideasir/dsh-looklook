@@ -295,7 +295,7 @@ Cookies 只传给 yt-dlp，不会打印内容，不会交给视觉模型，也�
 
 ## 环境要求
 
-- DeepSeek Harness `dsh web` v0.1.0-rc.6 或更高版本；
+- DeepSeek Harness `dsh web` v0.1.0-rc.7 或更高版本；
 - Node.js：由 DSH 提供；
 - Python 3.9+：视频 worker 和本地 ASR 使用；
 - ffmpeg：视频抽帧和音频提取；
