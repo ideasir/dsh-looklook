@@ -900,8 +900,8 @@ export function apply(ctx: ClientContext): void {
   // ── Plugins settings → 插件配置: the looklook card (switches + vision + ASR). ──
   ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
     name: 'settings.plugin.item',
-    id: PLUGIN_CARD_ID,
-    order: 30,
+    key: PLUGIN_CARD_ID,
+    priority: 30,
     inject: (): LooklookCardInjected => ({
       api: connection.api,
       pluginSettings,
