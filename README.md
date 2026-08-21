@@ -1,6 +1,10 @@
 # Look Look
 
-> 当前版本 `0821-rc.8`，适配 DSH `v0.1.0-rc.8`。使 DeepSeek Harness 的纯文本 Agent 具备图片、视频、音频、PSD、Office 文档、PDF、压缩包的理解能力。通过 `looklook_see` 工具实现，无需额外安装运行时依赖。
+> 当前版本 `0821-rc.8`，适配 DSH `v0.1.0-rc.8`。使 DeepSeek Harness 的纯文本 Agent 具备图片、视频、音频、PSD、Office 文档、PDF、压缩包的理解能力。
+
+![DSH 主界面](screenshots/01-home.png)
+![插件列表](screenshots/02-plugins-list.png)
+![Look Look 设置](screenshots/03-looklook.png)
 
 ## 安装方式
 
