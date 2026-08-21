@@ -20,7 +20,9 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { readFile } from 'node:fs/promises'
-import { join, resolve, sep } from 'node:path'
+import { writeFileSync, readFileSync, existsSync, rmSync, readdirSync } from 'node:fs'
+import { join, resolve, sep, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { saveUpload, MAX_UPLOAD_BYTES, safeFileName, UPLOADS_DIR } from './upload.ts'
 import {
   localAsrReady,
@@ -33,6 +35,7 @@ import {
   type AsrInstallPhase,
 } from './asr-install.ts'
 import { runEnvCheck, repairEnv, type EnvCheckReport, type EnvCheckItem } from './env-check.ts'
+import { runCapabilityCheck, type CapabilityReport } from './capability-check.ts'
 import { chatCompletionsUrl } from './vision-client.ts'
 
 /** One model-discovery outcome, returned over the wire as lossless JSON. */
@@ -340,15 +343,15 @@ export class LooklookRemoteService extends TypertRemoteService {
       if (target !== resolvedUploadDir && !target.startsWith(resolvedUploadDir + sep)) {
         return { ok: false, error: 'invalid file target' }
       }
-      // Stat first so an oversized image is rejected without loading it into
+      // Stat first so an oversized file is rejected without loading it into
       // memory (the 100MB upload cap would otherwise create a transient spike).
       const { stat } = await import('node:fs/promises')
       const info = await stat(target)
       if (!info.isFile()) return { ok: false, error: 'not a file' }
-      if (info.size > 32 * 1024 * 1024) return { ok: false, error: '图片超过 32MB 上限' }
+      if (info.size > 100 * 1024 * 1024) return { ok: false, error: '文件超过 100MB 上限' }
       const data = await readFile(target)
       const mediaType = mediaTypeOfUpload(name)
-      if (mediaType === undefined) return { ok: false, error: 'not an image file' }
+      if (mediaType === undefined) return { ok: false, error: 'not an image or video file' }
       return { ok: true, mediaType, data: data.toString('base64') }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -387,6 +390,38 @@ export class LooklookRemoteService extends TypertRemoteService {
         status: 'error',
         detail: error instanceof Error ? error.message : String(error),
         repairable: false,
+      }
+    }
+  }
+
+  /** 功能能力自检（图像/视频/声音/PSD/Office/视频平台）。 */
+  @Remote
+  async capabilityCheck(): Promise<CapabilityReport> {
+    try {
+      const settings = this.ctx.get('settings')
+      // 读取视觉/音频模型是否已配置
+      let hasVisionModel = false
+      let hasAudioModel = false
+      let hasLocalAsr = false
+      try {
+        const vision = settings?.get(settingsNamespace('vision')) as { providers?: Array<{ enabled?: boolean }> } | undefined
+        hasVisionModel = (vision?.providers ?? []).some(p => p.enabled !== false)
+        const audio = settings?.get(settingsNamespace('looklook-audio')) as { providers?: Array<{ enabled?: boolean }> } | undefined
+        hasAudioModel = (audio?.providers ?? []).some(p => p.enabled !== false)
+        hasLocalAsr = await localAsrReady()
+      } catch {
+        // settings 未就绪时按未配置处理
+      }
+      return await runCapabilityCheck(hasVisionModel, hasAudioModel, hasLocalAsr)
+    } catch (error) {
+      return {
+        ok: false,
+        items: [{
+          id: 'check',
+          label: '功能检测',
+          status: 'fail',
+          errorReason: error instanceof Error ? error.message : String(error),
+        }],
       }
     }
   }
@@ -446,9 +481,16 @@ export class LooklookRemoteService extends TypertRemoteService {
         const body = await response.json() as { choices?: Array<{ message?: Record<string, unknown> }> }
         const message = body.choices?.[0]?.message
         let text = ''
-        for (const field of ['content', 'reasoning']) {
+        for (const field of ['content', 'reasoning_content', 'reasoning']) {
           const value = message?.[field]
           if (typeof value === 'string' && value.trim() !== '') { text = value.trim(); break }
+          if (Array.isArray(value)) {
+            // content 可能是数组（多模态模型返回的 content 块）
+            for (const block of value) {
+              if (typeof block?.text === 'string' && block.text.trim() !== '') { text = block.text.trim(); break }
+            }
+            if (text !== '') break
+          }
         }
         if (text === '') return { ok: true, supportsImage: false, message: '模型返回了空内容，可能不支持图像输入' }
         return { ok: true, supportsImage: true, message: '模型可以看图 ✓（测试回复：' + text.slice(0, 40) + '）' }
@@ -497,9 +539,92 @@ export class LooklookRemoteService extends TypertRemoteService {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
   }
+
+  /** 获取插件版本号。 */
+  @Remote
+  async getPluginVersion(): Promise<{ ok: true; version: string } | { ok: false; error: string }> {
+    try {
+      const __filename = fileURLToPath(import.meta.url)
+      const pkgPath = join(dirname(dirname(__filename)), 'package.json')
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
+      return { ok: true, version: pkg.version ?? 'unknown' }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
+  /** 检查 GitHub 是否有更新版本。 */
+  @Remote
+  async checkUpdate(): Promise<{ ok: true; hasUpdate: boolean; remoteVersion: string } | { ok: false; error: string }> {
+    try {
+      const __filename = fileURLToPath(import.meta.url)
+      const pkgPath = join(dirname(dirname(__filename)), 'package.json')
+      const localPkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
+      const localVersion = localPkg.version ?? ''
+      // 从 GitHub raw 获取远端 package.json 版本
+      const resp = await fetch('https://ghfast.top/https://raw.githubusercontent.com/ideasir/dsh-looklook/main/package.json', {
+        signal: AbortSignal.timeout(8_000),
+      })
+      if (!resp.ok) return { ok: true, hasUpdate: false, remoteVersion: localVersion }
+      const remotePkg = await resp.json() as { version?: string }
+      const remoteVersion = remotePkg.version ?? ''
+      const hasUpdate = remoteVersion !== '' && remoteVersion !== localVersion
+      return { ok: true, hasUpdate, remoteVersion }
+    } catch {
+      // 网络不可达时，保守认定无更新
+      return { ok: true, hasUpdate: false, remoteVersion: '' }
+    }
+  }
+
+  /** 卸载 looklook 插件（从 profile 移除 + 删除文件）。 */
+  @Remote
+  async uninstallPlugin(): Promise<{ ok: true; restart: boolean } | { ok: false; error: string }> {
+    try {
+      // 确定 profile 目录
+      const dshHome = process.env.DSH_HOME ?? join(process.env.HOME ?? '/root', '.dsh')
+      const profileDir = join(dshHome, 'profiles', 'web')
+      const pkgPath = join(profileDir, 'package.json')
+
+      // 读取 profile package.json
+      const profilePkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
+
+      // 从 dependencies 移除
+      if (profilePkg.dependencies?.['dsh-looklook']) {
+        delete profilePkg.dependencies['dsh-looklook']
+      }
+
+      // 从 bundles 移除
+      if (Array.isArray(profilePkg.dsh?.profile?.bundles)) {
+        profilePkg.dsh.profile.bundles = profilePkg.dsh.profile.bundles.filter(
+          (b: string) => b !== 'dsh-looklook',
+        )
+      }
+
+      // 写回
+      writeFileSync(pkgPath, JSON.stringify(profilePkg, null, 2) + '\n', 'utf8')
+
+      // 删除 node_modules 中的 looklook
+      const nmDir = join(profileDir, 'node_modules', 'dsh-looklook')
+      if (existsSync(nmDir)) rmSync(nmDir, { recursive: true, force: true })
+
+      // 删除 .pnpm 中的 looklook 相关
+      const pnpmDir = join(profileDir, 'node_modules', '.pnpm')
+      if (existsSync(pnpmDir)) {
+        for (const entry of readdirSync(pnpmDir)) {
+          if (entry.startsWith('dsh-looklook@')) {
+            rmSync(join(pnpmDir, entry), { recursive: true, force: true })
+          }
+        }
+      }
+
+      return { ok: true, restart: true }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
 }
 
-/** Map an upload file name to an image media type (or undefined). */
+/** Map an upload file name to a media type (image or video). */
 function mediaTypeOfUpload(name: string): string | undefined {
   const dot = name.toLowerCase().lastIndexOf('.')
   const ext = dot >= 0 ? name.toLowerCase().slice(dot) : ''
@@ -511,6 +636,14 @@ function mediaTypeOfUpload(name: string): string | undefined {
     case '.gif': return 'image/gif'
     case '.bmp': return 'image/bmp'
     case '.avif': return 'image/avif'
+    case '.mp4': return 'video/mp4'
+    case '.mov': return 'video/quicktime'
+    case '.avi': return 'video/x-msvideo'
+    case '.mkv': return 'video/x-matroska'
+    case '.webm': return 'video/webm'
+    case '.flv': return 'video/x-flv'
+    case '.wmv': return 'video/x-ms-wmv'
+    case '.m4v': return 'video/x-m4v'
     default: return undefined
   }
 }
@@ -579,6 +712,19 @@ async function probeAudioL2(
       }
       if (response.status === 404) return { accepted: false, error: '模型不存在（404）' }
       if (!response.ok) return { accepted: false, error: `HTTP ${response.status}` }
+      // 2xx 但必须确认模型真的返回了内容（DeepSeek 系 thinking 模型会把
+      // 回复放在 reasoning_content，content 为空；以及 content 可能是数组）。
+      const body = await response.json() as { choices?: Array<{ message?: Record<string, unknown> }> }
+      const message = body.choices?.[0]?.message
+      let hasText = false
+      for (const field of ['content', 'reasoning_content', 'reasoning']) {
+        const value = message?.[field]
+        if (typeof value === 'string' && value.trim() !== '') { hasText = true; break }
+        if (Array.isArray(value) && value.some(block => typeof block?.text === 'string' && block.text.trim() !== '')) {
+          hasText = true; break
+        }
+      }
+      if (!hasText) return { accepted: false, error: '模型返回了空内容（200 但无有效回复），可能不支持音频输入' }
       return { accepted: true, error: '' }
     } finally {
       clearTimeout(timeout)

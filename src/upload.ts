@@ -93,7 +93,7 @@ export async function saveUpload(
   // pasted/dropped files with the same name (e.g. "image.png" from clipboard)
   // do not overwrite each other.
   const dot = safe.lastIndexOf('.')
-  const ts = Date.now().toString(36)
+  const ts = Date.now().toString()
   const unique = dot >= 0 ? `${safe.slice(0, dot)}_${ts}${safe.slice(dot)}` : `${safe}_${ts}`
   // resolve() + prefix guard: even a weird basename cannot escape.
   const target = resolve(uploadDir, unique)

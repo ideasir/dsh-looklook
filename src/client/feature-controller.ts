@@ -3,6 +3,10 @@
  * (`enabled`) through the wire settings API. One switch controls the whole
  * plugin — ON (default) = every capability enabled; OFF = plugin dormant and
  * DSH behaves as without it.
+ *
+ * Race-condition fix: when `api.describe()` fails (remote not yet mounted),
+ * retry after a short delay instead of defaulting to enabled=true. The remote
+ * mounts within ~500ms on a fresh page load.
  */
 
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -30,10 +34,14 @@ export interface FeatureController {
 /** Create the plugin master-switch controller. */
 export function createFeatureController(api: PluginSettingsClient): FeatureController {
   const store = createSnapshotStore<FeatureState>({ status: 'loading' })
+  let retryTimer: number | null = null
   const refresh = async (): Promise<void> => {
     const response = await api.describe()
     if (!response.ok) {
-      store.set({ status: 'ready', enabled: true })
+      // Remote not ready yet — retry after 600ms instead of defaulting to
+      // enabled=true (which would make the switch appear ON on a fresh page
+      // load before the remote RPC namespace is mounted).
+      retryTimer = window.setTimeout(() => void refresh(), 600)
       return
     }
     const value = namespaceValueOf(response.namespaces, 'looklook') as LooklookSettingsView | undefined
@@ -48,7 +56,12 @@ export function createFeatureController(api: PluginSettingsClient): FeatureContr
   }
   return {
     store,
-    load: () => { void refresh() },
+    load: () => {
+      // Clear any pending retry from a previous load() call so we don't
+      // stack timers when load() is called multiple times.
+      if (retryTimer !== null) window.clearTimeout(retryTimer)
+      void refresh()
+    },
     setEnabled: (next) => { void update({ enabled: next }) },
   }
 }

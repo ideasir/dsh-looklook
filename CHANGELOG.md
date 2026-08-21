@@ -1,5 +1,32 @@
 # Changelog
 
+## [0821-rc.8] - 2026-08-20
+
+### 新增
+- **ChatMinimap 导航概览标尺**：在对话区左侧显示用户消息概览横杠，支持点击跳转、悬停预览。从 React store（ConversationRoot.nodes）读取完整消息列表，不受虚拟滚动影响。自动缓存，会话切换时重建。
+- **CopySessionIdButton 复制会话 ID**：在 assistant-actions 槽位添加按钮，一键复制 `dsh-session://` 链接到剪贴板。
+- **深色/浅色主题自适应**：ChatMinimap 横杠颜色根据当前主题自动切换配色。
+- **热区悬停效果**：横杠悬停时当前变宽（30px）、上下相邻变宽（20px），鼠标离开恢复。
+
+### 适配
+- **升级至 DSH v0.1.0-rc.8**：所有 `@deepseek-ai/*` 依赖从 `^0.1.0-rc.7` 升级到 `^0.1.0-rc.8`。
+- **DSH 滚动容器类名变更**：rc.8 中滚动容器从 `.Md3f7G_scroll` 改为 `wSkVaW_scrollBody`，选择器改为通配匹配 `[class*="scrollBody"], [class*="scroller"], .Md3f7G_scroll`。
+- **DSH 不再导出 `bindSnapshotSelector`**：插件内自建替代实现（`bind-snapshot.ts`）。
+
+### 修复
+- **文件上传时间戳从 36 进制改为十进制**：`Date.now().toString(36)` 生成 `mt1d67q7` 难以理解，改为 `Date.now().toString()` 生成 `1755693182000` 可读时间戳。
+- **排队气泡显示源代码**：去掉 draft 中的 JSON 标记，改用 `fileRegistry` Map + `NEW_NOTE_RE` 文本标记方案。
+- **fileRegistry key 不匹配导致缩略图 0B**：registry 用原始文件名做 key（不是哈希名），`UserMessageNodeView` 渲染时正确匹配。
+- **模型找不到文件**：文本末尾保留 `[f:serverName]` 紧凑格式供 AI 使用。
+- **feature-controller / eye-controller 竞态条件**：RPC 未就绪时不再擅自默认状态，改为 600ms 重试。
+- **MutationObserver 循环触发**（ChatMinimap 越点越多）：给标尺添加 `looklook-minimap` class，observer 排除自身变化。
+- **ChatMinimap 加载不全**：从 React store 直接读取完整消息列表，不再依赖 DOM 查询（虚拟滚动只渲染 6 个节点）。
+- **ChatMinimap 切换会话延迟**：改用 document.body MutationObserver 实时监听，不再轮询等待。
+
+### 变更
+- **接口定义迁移**：`SessionModality`、`EnvCheckItem`、`EnvCheckReport`、`CapabilityItem`、`CapabilityReport` 从 `upload-shared.ts` 导出（原在 `plugin-settings.ts`）。
+- **`looklook-skill` 更新**：指示 AI 用 `[f:serverName]` 标记做 `looklook_see` 的 source 参数，避免文件找不到。
+
 ## [0.3.0] - 2026-08-19
 
 ### 适配

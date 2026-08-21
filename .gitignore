@@ -8,3 +8,6 @@ DEVLOG.md
 tmp-worker-out/
 .uploads/
 looklook-asr/
+
+# 构建产物（git rm --cached 掉）
+lib/

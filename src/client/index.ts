@@ -8,7 +8,7 @@
 
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
+import { bindSnapshotSelector } from './bind-snapshot.ts'
 // Type-only: pulls the shell's SlotMap merges (settings.plugins.tab,
 // conversation.input.left) and the locale/remote Context merges.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -19,11 +19,13 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createEyeController, type EyeController } from './eye-controller.ts'
 import { createFeatureController, type FeatureController } from './feature-controller.ts'
 import { createPendingFilesController, type PendingFilesController } from './pending-files.ts'
+import { CopySessionIdButton, type CopySessionIdInjected } from './CopySessionIdButton.tsx'
+import { installChatMinimap } from './ChatMinimap.ts'
 import { LooklookUserMessageNodeView } from './UserMessageNodeView.tsx'
 import { LooklookPluginCard, type LooklookCardInjected } from './PluginTab.tsx'
 import { VisionToggle, type VisionToggleInjected } from './VisionToggle.tsx'
 import { FileChips, type FileChipsInjected } from './FileChips.tsx'
-import { isUploadableName, isNativeImageName, uploadFile, type SessionModality, type EnvCheckItem, type EnvCheckReport } from './upload-shared.ts'
+import { isUploadableName, isNativeImageName, uploadFile, type SessionModality, type EnvCheckItem, type EnvCheckReport, type CapabilityItem, type CapabilityReport } from './upload-shared.ts'
 import { en, zh, type LookLookKey } from './locales.ts'
 import type { PluginSettingsClient } from './plugin-settings.ts'
 
@@ -88,7 +90,7 @@ export function apply(ctx: ClientContext): void {
         })
         // Brief toast feedback.
         const el = document.createElement('div')
-        el.textContent = '✅ 已复制会话引用（dsh-session://），可粘贴到其他对话'
+        el.textContent = '已复制会话引用（dsh-session://），可粘贴到其他对话'
         el.style.cssText = [
           'position:fixed', 'bottom:24px', 'left:50%', 'transform:translateX(-50%)',
           'z-index:99999', 'background:var(--dsw-alias-bg-base,#1a1a2e)',
@@ -107,36 +109,60 @@ export function apply(ctx: ClientContext): void {
     }, 'dsh-looklook: session share global')
   }
 
-  // Pending staged files (uploaded, waiting for the user to press Enter).
+  // Pending staged files (uploaded, shown as chips, sent with Enter).
   const pending: PendingFilesController = createPendingFilesController()
   const usePending = bindSnapshotSelector(pending.store)
 
-  /** Compose the model-facing + client-rendering notes for one staged file. */
+  /** Compose a human-readable file note for one uploaded file.
+   *  Format: [压缩包] 文件名.zip【looklook:file】{json}【looklook:file】
+   *  The queue bubble shows the friendly prefix; the final render
+   *  parses the JSON into a file card (thumbnail / icon + tooltip). */
   const fileTypeLabel = (name: string): string => {
     const ext = name.toLowerCase().split('.').pop() ?? ''
-    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'].includes(ext)) return '图片'
-    if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'].includes(ext)) return '视频'
-    if (['zip', '7z', 'rar', 'tar', 'gz'].includes(ext)) return '压缩包'
-    if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'psd', 'txt'].includes(ext)) return '文档'
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif', 'svg', 'psd', 'tiff', 'ico', 'heic', 'heif', 'raw'].includes(ext)) return '图片'
+    if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v', 'mpg', 'mpeg'].includes(ext)) return '视频'
+    if (['zip', '7z', 'rar', 'tar', 'gz', 'xz', 'bz2', 'lz', 'zst'].includes(ext)) return '压缩包'
+    if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'md', 'rtf', 'csv', 'tsv', 'ods', 'odp', 'key'].includes(ext)) return '文档'
+    if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'wma'].includes(ext)) return '音频'
+    if (['exe', 'msi', 'dmg', 'app', 'deb', 'rpm', 'apk', 'jar'].includes(ext)) return '文件'
+    if (['py', 'js', 'ts', 'jsx', 'tsx', 'css', 'html', 'json', 'yaml', 'yml', 'xml', 'php', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'cs', 'sh', 'bash'].includes(ext)) return '代码'
     return '文件'
   }
-  const fileNote = (f: { name: string; path?: string; size: number }): string => {
-    return `[${fileTypeLabel(f.name)}]${f.name} 排队中...`
+  /** Human-readable file size. */
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
   }
+
+  const fileNote = (f: { name: string; path?: string; size: number }): string => {
+    const label = fileTypeLabel(f.name)
+    const serverName = f.path ? f.path.split('/').pop() ?? f.name : f.name
+    return `[${label}]${f.name} (${formatFileSize(f.size)}) [f:${serverName}]`
+  }
+
+  /** Global file registry: sessionId → filename → FileMeta. */
+  const fileRegistry = new Map<string, Map<string, { name: string; displayName: string; path: string; size: number }>>()
 
   /**
    * Merge every staged file's note into the current draft. Returns the
-   * merged draft text; the caller decides when to submit.
+   * merged draft text; the caller triggers the send.  Saves metadata into
+   * the global fileRegistry so the sent-message renderer can build cards.
    */
   const mergeNotesIntoDraft = (sessionId: string, draft: string): string => {
-    // Only fully-uploaded files (path set, no error) are merged; a file still
-    // uploading OR failed stays in the chip row so the error stays visible.
     const staged = pending.get(sessionId).filter(
       f => f.path !== undefined && f.path !== '' && f.uploading !== true && f.error === undefined,
     )
     if (staged.length === 0) return draft
     const notes = staged.map(fileNote).join('\n')
-    // Keep uploading/failed chips; drop only the merged (successful) ones.
+    // Save metadata into the global registry for the renderer.
+    // Key = original filename (f.name) so the text [图片]f.name matches.
+    const reg = new Map(fileRegistry.get(sessionId) ?? [])
+    for (const f of staged) {
+      const serverName = f.path ? f.path.split('/').pop() ?? f.name : f.name
+      reg.set(f.name, { name: serverName, displayName: f.name, path: f.path ?? '', size: f.size })
+    }
+    fileRegistry.set(sessionId, reg)
     const remaining = pending.get(sessionId).filter(
       f => f.path === undefined || f.path === '' || f.uploading === true || f.error !== undefined,
     )
@@ -148,10 +174,8 @@ export function apply(ctx: ClientContext): void {
   }
 
   /**
-   * Enter/send submit patch (per-session): every submit route — Enter via the
-   * keyboard, the send button via actions.submit — funnels through the
-   * session input shell's `submit()`. Wrap it once so staged files ride the
-   * outgoing message instead of needing a separate "send attachment" button.
+   * Patch the session's submit() so staged file notes are merged into the
+   * draft before sending. Runs once per session.
    */
   const patchedSessions = new Set<string>()
   const ensureSubmitPatched = (sessionId: string): void => {
@@ -180,18 +204,22 @@ export function apply(ctx: ClientContext): void {
       try {
         const draft = readDraft()
         const merged = mergeNotesIntoDraft(sessionId, draft)
-        if (merged !== draft) setDraft(merged)
+        if (merged !== draft) {
+          setDraft(merged)
+          originalSubmit(mode)
+          setDraft(draft) // restore draft immediately so user never sees raw marker
+        } else {
+          originalSubmit(mode)
+        }
       } catch (error) {
-        // Never let the merge break sending — the original submit must run.
         console.error('looklook submit merge failed:', error)
+        originalSubmit(mode)
       }
-      originalSubmit(mode)
     }
     patchedSessions.add(sessionId)
   }
 
-  // Patch the current session's submit whenever the session changes, so the
-  // merge is always in place before the user presses Enter.
+  // Patch the current session's submit whenever the session changes.
   ctx.effect(() => {
     const sync = (): void => {
       const sessionId = sessions.currentProvideInfo.getSnapshot()?.sessionId
@@ -543,6 +571,42 @@ export function apply(ctx: ClientContext): void {
           result: { mode: 'strict', typeSymbol: 'LooklookEnvCheckReport', schema: { parse: parseAsIs } },
         },
         {
+          id: 'looklook.capabilityCheck',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'capabilityCheck',
+          invocation: { kind: 'direct' },
+          parameters: [],
+          result: { mode: 'strict', typeSymbol: 'LooklookCapabilityReport', schema: { parse: parseAsIs } },
+        },
+        {
+          id: 'looklook.getPluginVersion',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'getPluginVersion',
+          invocation: { kind: 'direct' },
+          parameters: [],
+          result: { mode: 'strict', typeSymbol: 'LooklookVersionResult', schema: { parse: parseAsIs } },
+        },
+        {
+          id: 'looklook.checkUpdate',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'checkUpdate',
+          invocation: { kind: 'direct' },
+          parameters: [],
+          result: { mode: 'strict', typeSymbol: 'LooklookUpdateResult', schema: { parse: parseAsIs } },
+        },
+        {
+          id: 'looklook.uninstallPlugin',
+          service: 'looklookRemote',
+          namespace: 'looklook',
+          method: 'uninstallPlugin',
+          invocation: { kind: 'direct' },
+          parameters: [],
+          result: { mode: 'strict', typeSymbol: 'LooklookUninstallResult', schema: { parse: parseAsIs } },
+        },
+        {
           id: 'looklook.envRepair',
           service: 'looklookRemote',
           namespace: 'looklook',
@@ -649,7 +713,7 @@ export function apply(ctx: ClientContext): void {
         const staged = {
           name: file.name,
           size: file.size,
-          ...(file.type.startsWith('image/') ? { previewUrl: URL.createObjectURL(file) } : {}),
+          ...(file.type.startsWith('image/') || file.type.startsWith('video/') ? { previewUrl: URL.createObjectURL(file) } : {}),
           uploading: true,
           progress: 0,
         }
@@ -657,12 +721,11 @@ export function apply(ctx: ClientContext): void {
         const id = controller.get(sessionId)[controller.get(sessionId).length - 1]?.id
         if (id === undefined) continue
         try {
-          const { path, name } = await uploadFileRpc(sessionId, file, (percent) => {
+          const { path } = await uploadFileRpc(sessionId, file, (percent) => {
             controller.updateById(sessionId, id, { progress: percent })
           })
           controller.updateById(sessionId, id, {
             path,
-            ...(name !== undefined ? { name } : {}),
             uploading: false,
             progress: 100,
             error: undefined,
@@ -764,6 +827,86 @@ export function apply(ctx: ClientContext): void {
     const report = envelope.value
     if (report === undefined) throw new Error('环境检测失败')
     return report
+  }
+
+  /** 功能能力自检（图像/视频/声音/PSD/Office/视频平台）。 */
+  const capabilityCheck = async (): Promise<CapabilityReport> => {
+    const remote = ctx.get('remote.looklook') as {
+      capabilityCheck?: () => Promise<
+        { ok: boolean; value?: CapabilityReport; error?: { message?: string } }
+      >
+    } | undefined
+    if (remote?.capabilityCheck === undefined) throw new Error('功能检测服务未就绪')
+    const envelope = await remote.capabilityCheck()
+    if (!envelope.ok) {
+      throw new Error(
+        typeof envelope.error === 'string'
+          ? envelope.error
+          : envelope.error?.message ?? '功能检测失败',
+      )
+    }
+    const report = envelope.value
+    if (report === undefined) throw new Error('功能检测失败')
+    return report
+  }
+
+  /** 获取插件版本号。 */
+  const getPluginVersion = async (): Promise<string> => {
+    const remote = ctx.get('remote.looklook') as {
+      getPluginVersion?: () => Promise<
+        { ok: boolean; value?: { version: string } | { error?: string }; error?: { message?: string } }
+      >
+    } | undefined
+    if (remote?.getPluginVersion === undefined) return ''
+    try {
+      const envelope = await remote.getPluginVersion()
+      if (!envelope.ok) return ''
+      const value = envelope.value
+      if (value === undefined) return ''
+      return 'version' in value ? value.version : ''
+    } catch {
+      return ''
+    }
+  }
+
+  /** 检查 GitHub 是否有更新。 */
+  const checkUpdate = async (): Promise<{ hasUpdate: boolean; remoteVersion: string }> => {
+    const remote = ctx.get('remote.looklook') as {
+      checkUpdate?: () => Promise<
+        { ok: boolean; value?: { hasUpdate: boolean; remoteVersion: string } | { error?: string }; error?: { message?: string } }
+      >
+    } | undefined
+    if (remote?.checkUpdate === undefined) return { hasUpdate: false, remoteVersion: '' }
+    try {
+      const envelope = await remote.checkUpdate()
+      if (!envelope.ok) return { hasUpdate: false, remoteVersion: '' }
+      const value = envelope.value
+      if (value === undefined || !('hasUpdate' in value)) return { hasUpdate: false, remoteVersion: '' }
+      return { hasUpdate: value.hasUpdate, remoteVersion: value.remoteVersion }
+    } catch {
+      return { hasUpdate: false, remoteVersion: '' }
+    }
+  }
+
+  /** 卸载 looklook 插件。 */
+  const uninstallPlugin = async (): Promise<{ ok: boolean; error?: string }> => {
+    const remote = ctx.get('remote.looklook') as {
+      uninstallPlugin?: () => Promise<
+        { ok: boolean; value?: { restart: boolean } | { error?: string }; error?: { message?: string } }
+      >
+    } | undefined
+    if (remote?.uninstallPlugin === undefined) return { ok: false, error: '卸载服务未就绪' }
+    try {
+      const envelope = await remote.uninstallPlugin()
+      if (!envelope.ok) {
+        return { ok: false, error: typeof envelope.error === 'string' ? envelope.error : envelope.error?.message ?? '卸载失败' }
+      }
+      const value = envelope.value
+      if (value === undefined || !('restart' in value)) return { ok: false, error: '卸载失败' }
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
   }
 
   /** One-click repair for one env item; returns the item's fresh state. */
@@ -915,6 +1058,10 @@ export function apply(ctx: ClientContext): void {
       asrInstall,
       envCheck,
       envRepair,
+      capabilityCheck,
+      getPluginVersion,
+      checkUpdate,
+      uninstallPlugin,
       usePluginEnabled,
     }),
   }, LooklookPluginCard))
@@ -1035,8 +1182,8 @@ export function apply(ctx: ClientContext): void {
   }, 'dsh-looklook: file drag-and-drop')
 
   // Pending file chips (like image attachments, removable, sent with the
-  // next Enter/send — the submit patch merges their notes), rendered above
-  // the composer card (input.dock), where image thumbnails go.
+  // next Enter/send — the submit patch merges their notes), rendered INSIDE
+  // the composer card (input.attachments), where native image thumbnails go.
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
     name: 'conversation.input.dock',
     id: PENDING_ID,
@@ -1063,7 +1210,7 @@ export function apply(ctx: ClientContext): void {
 
   // Render the ORIGINAL image in user messages (native position, plugin
   // renderer so the original image + file-channel thumbnails show inline).
-  const chatNodeInject = (): { sessionId: string; loadUpload: import('./UserMessageNodeView.tsx').UploadImageLoader } => {
+  const chatNodeInject = (): { sessionId: string; loadUpload: import('./UserMessageNodeView.tsx').UploadImageLoader; fileRegistry: Map<string, Map<string, { name: string; displayName: string; path: string; size: number }>> } => {
     const sessionId = sessions.currentProvideInfo.getSnapshot()?.sessionId ?? ''
     const loadUpload: import('./UserMessageNodeView.tsx').UploadImageLoader = async (sid, name) => {
       const remote = ctx.get('remote.looklook') as {
@@ -1087,7 +1234,7 @@ export function apply(ctx: ClientContext): void {
       }
       return { ok: false, error: typeof business?.error === 'string' ? business.error : '图片读取失败' }
     }
-    return { sessionId, loadUpload }
+    return { sessionId, loadUpload, fileRegistry }
   }
 
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
@@ -1104,4 +1251,25 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: chatNodeInject,
   }, LooklookUserMessageNodeView))
+
+  // Copy-session-id button, rendered in the assistant-actions row (next to
+  // copy-text / branch).  Copies `dsh-session://<id>\n标题: <title>`.
+  const copySessionIdInject = (): CopySessionIdInjected => {
+    const info = sessions.currentProvideInfo.getSnapshot()
+    const sessionId = info?.sessionId ?? ''
+    let title = ''
+    const list = (sessions as unknown as { list?: { getSnapshot(): { byId: Record<string, { displayTitle?: string }> } } })?.list?.getSnapshot?.()
+    const row = list?.byId[sessionId]
+    if (row && typeof row.displayTitle === 'string') title = row.displayTitle
+    return { sessionId, title }
+  }
+  ctx.slots.inject('conversation.chat.assistant-actions', () => ctx.slots.register({
+    name: 'conversation.chat.assistant-actions',
+    id: 'looklook-copy-session-id',
+    order: 10,
+    inject: copySessionIdInject,
+  }, CopySessionIdButton))
+
+  // ── Chat minimap — left-side vertical dash bar ────────────────
+  ctx.effect(() => { installChatMinimap(); return () => {} }, 'dsh-looklook: chat minimap')
 }

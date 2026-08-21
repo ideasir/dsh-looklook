@@ -1,8 +1,11 @@
 /**
- * Per-session eye-toggle controller. Reads and writes the `vision` settings
- * namespace (`sessionOverrides[sessionId]`, default `on`) through the wire
- * settings API, and reports whether any enabled provider is configured so the
+ * Per-session eye-toggle controller. Reads the `vision` settings namespace
+ * (`sessionOverrides[sessionId]`, default `on`) through the wire settings
+ * API, and reports whether any enabled provider is configured so the
  * toggle can warn when the eye is on but recognition is not configured.
+ *
+ * Race-condition fix: when `api.describe()` fails (remote not yet mounted),
+ * retry after a short delay instead of defaulting to unconfigured=true.
  */
 
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -31,10 +34,14 @@ export interface EyeController {
 /** Create the controller for one session. */
 export function createEyeController(api: PluginSettingsClient, sessionId: string): EyeController {
   const store = createSnapshotStore<EyeState>({ status: 'loading' })
+  let retryTimer: number | null = null
   const refresh = async (): Promise<void> => {
     const response = await api.describe()
     if (!response.ok) {
-      store.set({ status: 'ready', eye: 'on', unconfigured: true })
+      // Remote not ready yet — retry after 600ms instead of defaulting to
+      // unconfigured=true (which would show the yellow warning on a fresh
+      // page load before the remote RPC namespace is mounted).
+      retryTimer = window.setTimeout(() => void refresh(), 600)
       return
     }
     const vision = namespaceValueOf(response.namespaces, 'vision') as VisionSettingsView | undefined
@@ -44,7 +51,10 @@ export function createEyeController(api: PluginSettingsClient, sessionId: string
   }
   return {
     store,
-    load: () => { void refresh() },
+    load: () => {
+      if (retryTimer !== null) window.clearTimeout(retryTimer)
+      void refresh()
+    },
     toggle: (next) => {
       void (async () => {
         await api.update('vision', { sessionOverrides: { [sessionId]: next } })

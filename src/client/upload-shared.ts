@@ -106,3 +106,24 @@ export interface EnvCheckReport {
   items: EnvCheckItem[]
   summary: string
 }
+
+/** Human-readable byte size (B / KB / MB). */
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/** 功能检测结果项（镜像宿主 CapabilityItem）。 */
+export interface CapabilityItem {
+  id: string
+  label: string
+  status: 'ok' | 'fail'
+  errorReason: string
+}
+
+/** 功能检测报告（镜像宿主 CapabilityReport）。 */
+export interface CapabilityReport {
+  ok: boolean
+  items: CapabilityItem[]
+}

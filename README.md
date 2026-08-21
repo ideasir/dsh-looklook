@@ -1,375 +1,190 @@
 # Look Look
 
-> **当前版本：`0.1.0-rc.7`**（跟随 DSH v0.1.0-rc.7 适配）
+> 当前版本 `0821-rc.8`，适配 DSH `v0.1.0-rc.8`。使 DeepSeek Harness 的纯文本 Agent 具备图片、视频、音频、PSD、Office 文档、PDF、压缩包的理解能力。通过 `looklook_see` 工具实现，无需额外安装运行时依赖。
 
-## 安装插件
+## 安装方式
 
-### 从 GitHub 安装
-
-```bash
-dsh plugin --profile web add github:ideasir/dsh-looklook
-```
-
-安装完成后重启 DSH Web：
+项目通过 DSH bundle 机制加载。在 DSH profile 的 `package.json` 中声明：
 
 ```bash
-dsh web --host 127.0.0.1 --port 3080
+cd /path/to/dsh/profile
+npm install --save /path/to/dsh-looklook
 ```
 
-然后打开 DSH Web，刷新浏览器页面：
+然后在 `package.json` 的 `dsh.profile.bundles` 中添加 `"dsh-looklook"`，重启 DSH 即可。
 
-```text
-Ctrl + Shift + R
-```
-
-> 插件的宿主代码需要重启 `dsh web` 才会生效；客户端界面通常在刷新页面后生效。
-
-### 发布后
-
-后续发布到 npm 后，安装方式会简化为：
-
-```bash
-dsh plugin --profile web add dsh-looklook
-```
-
-插件仓库：
-
-```text
-https://github.com/ideasir/dsh-looklook
-```
-
-## 项目介绍
-
-Look Look 是 DeepSeek Harness 的多媒体和文档理解插件。
-
-DeepSeek Harness 的主 Agent 可能是纯文本模型，不能直接理解图片、视频和设计文件。Look Look 提供一个统一的内置工具：
-
-```text
-looklook_see(source, question)
-```
-
-当用户要求查看图片、视频、PSD、PPT 或其他文件时，Agent 直接调用 Look Look，不需要先运行 `npm install`、`pip install`，也不需要临时下载外部解析器。
-
-Look Look 会根据内容类型自动选择处理流程，把解析结果、画面描述、字幕、声音理解和文档结构整理成主 Agent 可以使用的文本报告。
-
-## 主要功能
+## 功能清单
 
 ### 图片理解
-
-- 识别本地图片；
-- 调用用户配置的视觉模型；
-- 根据用户问题进行针对性分析；
-- 支持 PNG、JPG、JPEG、GIF、WebP 等常见格式；
-- 纯文本模型会通过 `.uploads/` 文件通道查看图片；
-- 已支持原生图片模型的会话继续使用原生图片管线；
-- 上传图片时在输入框显示本地缩略图。
+- 本地图片识别，调用用户配置的视觉模型
+- 支持 PNG/JPG/JPEG/GIF/WebP/BMP/AVIF/SVG/PSD/TIFF/ICO/HEIC/HEIF/RAW
+- 纯文本模型通过 `.uploads/` 文件通道查看图片
+- 原生多模态模型走原生图片管线
+- 上传时在输入框显示本地缩略图 + 拖拽/粘贴/按钮上传
 
 ### 视频理解
+- 本地视频：元信息读取、场景驱动抽帧、画面识别、字幕提取、音频提取、对白转写、语气/音乐/节奏理解、时间轴整理
+- 视频链接：B站、YouTube、抖音、西瓜视频、腾讯视频、yt-dlp 支持的平台
+- 缩略图 + 点击播放弹窗
 
-支持本地视频文件和视频链接。
+### 音频理解
+- 音频文件转写（MP3/WAV/FLAC/AAC/OGG/M4A/WMA）
+- 视频音频提取 + 对白转写
+- 可选本地 ASR（faster-whisper，tiny~large-v3）
 
-本地视频可以进行：
+### 文档解析
+- PPT/PPTX：幻灯片文字、图形、备注、图片、页面结构
+- PDF：页面文字 + 扫描页图片理解
+- Word/DOCX：段落、标题、表格、嵌入图片
+- Excel/XLSX：工作表、单元格、表格、日期数据
+- PSD：画布宽高、分辨率、色彩模式、图层树、文字图层、合成预览
+- ZIP：目录结构、按需分析、仅用户要求才解压
 
-- 视频元信息读取；
-- 场景驱动抽帧；
-- 画面内容识别；
-- 字幕提取；
-- 音频提取；
-- 对白转写；
-- 语气、音乐、节奏理解；
-- 画面、声音和字幕的时间轴整理。
+### 文件上传通道
+- 所有文件类型均可上传（图片/视频/压缩包/文档/音频/代码）
+- 输入框预览：图片缩略图、视频缩略图、文件类型图标（Tabler Icons）
+- 环形进度条 + 百分比
+- 原始文件名 + 服务端哈希名分离存储（防同名覆盖）
+- 排队气泡不泄露 JSON 标记
 
-视频链接支持：
+### 用户消息渲染
+- 图片：缩略图 + 灯箱（ImageLightbox）
+- 视频：缩略图 + 播放弹窗（VideoPlayer）
+- 其他文件：图标 + 文件名 + 大小
 
-- B站；
-- YouTube；
-- 抖音；
-- 西瓜视频；
-- 腾讯视频；
-- 以及 yt-dlp 支持的其他平台。
+### 设置面板
+- 主开关（整个插件开关）
+- 视觉模型配置（必填）+ 模型发现 + 测试
+- 音频模型配置（选填）+ 本地 ASR 安装
+- 环境检测 + 能力检测
+- 版本检查 + 更新检测 + 一键卸载
 
-链接视频的实际可用性取决于平台访问权限、代理、登录态、Cookies 和 yt-dlp 当前支持状态。
+### 会话级小眼睛开关
+- 工具栏小眼睛，按会话切换视觉增强
+- 开启时 Look Look 接管图片/视频
+- 关闭时退回原生模型处理
 
-### ZIP 压缩包
+### ChatMinimap 导航概览标尺
+- 对话区左侧显示用户消息横杠
+- 从 React store（ConversationRoot.nodes）读取完整消息列表，不受虚拟滚动影响
+- 悬停预览 + 点击跳转 + 深色/浅色主题自适应
+- 切换会话实时重建
 
-- 查看压缩包目录；
-- 展示文件和目录结构；
-- 根据用户问题分析压缩包内容；
-- 只有用户明确要求改变文件时，才使用 `process_zip` 执行解压。
+### 复制会话 ID
+- assistant-actions 槽位按钮，一键复制 `dsh-session://` 链接到剪贴板
 
-压缩包默认在待发送区域显示压缩包图标。
+## 项目架构
 
-### PSD 设计文件
-
-PSD 使用 Look Look 内置解析能力，不需要 Agent 另外下载 `psd.js` 或其他 PSD 解析器。
-
-支持：
-
-- 画布宽高；
-- 分辨率；
-- 色彩模式；
-- 图层总数；
-- 图层树和组结构；
-- 图层名称；
-- 显示/隐藏状态；
-- 常见文字图层文本；
-- PSD 合成预览；
-- Logo、海报、UI 设计等整体视觉分析。
-
-PSD 在待发送区域显示 PSD 图标。
-
-默认不批量导出 PSD 图层。大型 PSD 可能包含数百甚至数千个图层，批量导出会产生严重的磁盘、内存和处理时间压力。智能对象、蒙版、调整图层和特殊色彩模式可能存在解析限制。
-
-### Office 和 PDF 文档
-
-支持：
-
-- PPT/PPTX：幻灯片文字、图形、备注、图片和页面结构；
-- PDF：页面文字和扫描页图片理解；
-- Word/DOCX：段落、标题、表格和嵌入图片；
-- Excel/XLSX：工作表、单元格、表格和日期数据。
-
-### 本地语音识别
-
-可选安装 faster-whisper，在本机完成视频对白转写。
-
-支持选择：
-
-- tiny；
-- base；
-- small；
-- medium；
-- large-v3。
-
-同一时间只保留一个本地 ASR 模型，切换模型时会清理旧模型。
-
-## 使用方式
-
-安装后，用户可以直接发送文件并提问：
-
-```text
-请看看这个图片里的产品信息
+```
+dsh-looklook/
+├── src/
+│   ├── index.ts              # 服务端入口：注册 RPC 工具（looklook_see/process_zip/ffmpeg/ASR）
+│   ├── remote.ts             # 文件上传/读取/设置/凭据/环境检测 RPC 端点
+│   ├── client/
+│   │   ├── index.ts          # 客户端入口：RPC 注册、submit patch、fileRegistry、槽位注册
+│   │   ├── UserMessageNodeView.tsx  # 用户消息渲染（图片/视频/文件卡）
+│   │   ├── FileChips.tsx     # 输入框文件预览（缩略图/进度条/删除）
+│   │   ├── FileTypeIcon.tsx  # 文件类型图标（Tabler + SVG 文字标签）
+│   │   ├── ChatMinimap.ts    # 导航概览标尺（纯 DOM）
+│   │   ├── CopySessionIdButton.tsx  # 复制会话 ID 按钮
+│   │   ├── PluginTab.tsx     # 插件设置面板主卡片
+│   │   ├── VisionSettings.tsx  # 视觉/音频模型设置
+│   │   ├── ProviderListEditor.tsx  # 提供商列表编辑器
+│   │   ├── Features.tsx      # 功能开关
+│   │   ├── Features.tsx      # 功能检测区域
+│   │   ├── EnvCheck.tsx      # 环境检测弹窗
+│   │   ├── VisionToggle.tsx  # 小眼睛 SVG
+│   │   ├── lightbox.tsx      # 图片灯箱
+│   │   ├── video-player.tsx  # 视频播放器
+│   │   ├── eye-controller.ts  # 小眼睛状态控制器
+│   │   ├── feature-controller.ts # 主开关控制器
+│   │   ├── pending-files.ts  # 待发送文件管理
+│   │   ├── upload-shared.ts  # 上传逻辑 + formatSize
+│   │   ├── bind-snapshot.ts  # 自建 bindSnapshotSelector（DSH rc.8 不再导出）
+│   │   ├── plugin-settings.ts  # 插件设置接口类型
+│   │   ├── settings-view.ts  # 设置视图工具
+│   │   └── locales.ts        # 国际化（zh/en）
+│   ├── upload.ts             # 服务端上传 + 文件名时间戳
+│   ├── looklook-skill.ts     # AI 工具提示（告诉 Agent 用 [f:xxx] 做 source）
+│   ├── see-tool.ts           # looklook_see 工具主逻辑
+│   ├── video-tool.ts         # 视频处理工具
+│   ├── describe-tool.ts      # 图片描述
+│   ├── doc-tool.ts           # 文档解析工具
+│   ├── translate.ts          # 翻译工具
+│   ├── vision-client.ts      # 视觉 API 客户端
+│   ├── zip-store.ts          # 压缩包缓存
+│   ├── zip-tool.ts           # 解压工具
+│   ├── ffmpeg.ts             # FFmpeg 封装
+│   ├── asr-install.ts        # 本地 ASR 安装
+│   ├── capability-check.ts   # 能力检测
+│   ├── env-check.ts          # 环境检测
+│   ├── python-env.ts         # Python 环境管理
+│   ├── ref.ts                # 文件引用
+│   ├── settings.ts           # 设置管理
+│   ├── types.ts              # 类型定义
+│   └── parser/               # 文档解析器
+│       ├── index.ts          # 解析器路由
+│       ├── pdf.ts / pdf-worker.mjs / pdf-types.ts
+│       ├── docx.ts / pptx.ts / xlsx.ts
+│       ├── psd.ts / psd-types.ts
+│       ├── package.ts        # 压缩包解析
+│       └── xml.ts
+├── tests/                    # 验证测试
+├── scripts/                  # 构建脚本 + 视频 worker
+├── skills/                   # looklook-skill 技能文件
+└── cordis.patch.yml          # DSH 插件配置
 ```
 
-```text
-分析这个视频讲了什么，重点说明结论
-```
+## 设计原则
 
-```text
-这个 PSD 的 Logo 设计有哪些图层？整体风格怎么样？
-```
+### 与 DSH 核心解耦
+- 不修改任何 `@deepseek-ai/*` 源码
+- 缺失的组件（bindSnapshotSelector、ImageLightbox）在插件内自建
+- 使用 DSH 槽位系统注册 UI，不劫持原生渲染
+- 文件上传走独立 RPC 通道，不碰原生附件管线
 
-```text
-看看这个 PPT 的结构，并总结每一页的重点
-```
+### 文件命名规范
+- 服务端文件名：`原始文件名_时间戳.扩展名`（`Date.now().toString()` 十进制）
+- 原始文件名 ≠ 服务端名，两者分离存储
+- `fileRegistry` 以原始文件名做 key，服务端名存 value
 
-Agent 应直接调用：
+### 排队气泡防泄漏
+- draft 中不放 JSON 标记
+- 格式：`[图片]原始文件名 (大小) [f:服务端哈希名]`
+- 元数据存在全局 `fileRegistry` Map 中，渲染时查表
 
-```text
-looklook_see(source, question)
-```
+### 虚拟滚动兼容
+- DSH 使用虚拟滚动，DOM 中最多 6 个节点
+- ChatMinimap 从 React store 直接读取消息列表
+- MutationObserver 监听 body 变化，实时响应
 
-### 文件上传流程
+### 图标策略
+- 所有 SVG 硬编码，零 CDN 依赖
+- Tabler Icons 用于有专属图标的扩展名
+- 通用文件轮廓 + SVG `<text>` 标签处理无专属图标的扩展名
 
-```text
-选择或拖入文件
-  → 文件上传到当前会话的 .uploads/
-  → 输入框显示文件名、大小和类型图标
-  → 图片额外显示缩略图
-  → 用户输入问题并点击发送
-  → 文件路径和问题一起交给主 Agent
-  → Agent 调用 looklook_see
-```
-
-## 配置
-
-位置：
-
-```text
-设置 → 插件配置 → Look Look
-```
-
-### 对话框里的“小眼睛”
-
-对话框工具栏中的小眼睛是 Look Look 的**会话级视觉增强开关**。它不是一个只能安装后永久使用的功能：用户可以随时打开或关闭，在当前会话里即时切换 Look Look 的识别能力。
-
-这个设计有两个目的：
-
-- **给用户明确的自主权**：如果暂时不想使用 Look Look，不需要卸载插件，只要关闭小眼睛即可；需要时再打开，插件仍然保留在系统中。
-- **方便直观比较**：在同一个会话中切换开关，可以对照查看“使用 Look Look”和“交给原始对话模型处理”时的差异，帮助用户判断插件是否适合自己的模型和工作流。
-
-小眼睛关闭时，Look Look 不会替用户拦截当前会话的图片入口；小眼睛开启时，插件会按当前模型能力使用视觉增强。关闭状态只影响当前会话，不会卸载插件，也不会删除设置。
-
-### 设置页总开关
-
-设置页中的 `looklook.enabled` 是插件级总开关，默认开启。它适合用来暂时停用 Look Look 的全部能力；对话框小眼睛则适合在日常使用中按会话快速切换。
-
-关闭总开关后：
-
-- 插件停止拦截文件入口；
-- `looklook_see` 不执行识别；
-- DSH 恢复为没有启用 Look Look 时的行为；
-- 插件本身不会被卸载，重新打开即可恢复。
-
-### 视觉模型
-
-用于：
-
-- 图片识别；
-- 视频抽帧识别；
-- PSD 合成预览；
-- PPT/PDF 中的图片理解。
-
-支持多个 OpenAI-compatible 提供商，按顺序进行主模型和备用模型切换。
-
-### 音频模型
-
-用于：
-
-- 对白理解；
-- 语气分析；
-- 音乐识别；
-- 节奏和氛围分析。
-
-插件会自动探测模型能力，支持高阶音频理解的模型优先走高阶路径，不支持时降级为纯转写。
-
-## 视频网络、代理和 Cookies
-
-### 代理
-
-Look Look 会自动检测以下环境变量，并传给视频 worker 和 yt-dlp：
-
-```text
-DISCORD_PROXY
-HTTPS_PROXY
-HTTP_PROXY
-ALL_PROXY
-https_proxy
-http_proxy
-all_proxy
-```
-
-优先级从上到下。环境检测页面会显示是否发现代理配置，但不会显示代理 URL、用户名、密码或 Token。
-
-YouTube 等境外视频需要当前机器拥有真正可用的代理。Look Look 能发现并使用代理，但不能修复代理服务本身不可连接或无法访问目标网站的问题。
-
-### Cookies
-
-需要登录态的平台可以选择性配置：
-
-```text
-LOOKLOOK_COOKIES_BROWSER=edge
-```
-
-也可以指定 Netscape 格式的 Cookies 文件：
-
-```text
-LOOKLOOK_COOKIES_FILE=/path/to/cookies.txt
-```
-
-浏览器值可以是：
-
-```text
-edge
-chrome
-firefox
-```
-
-Cookies 只传给 yt-dlp，不会打印内容，不会交给视觉模型，也不会写入分析报告。
-
-## 平台能力边界
-
-| 平台/内容 | 状态 | 说明 |
-|---|---|---|
-| 本地图片 | 支持 | 视觉模型配置后可识别 |
-| 本地视频 | 支持 | 需要 ffmpeg；声音理解还需要音频模型或本地 ASR |
-| B站 | 支持 | 受网络、登录态和 yt-dlp 影响 |
-| YouTube | 依赖代理 | 需要当前机器能通过代理访问 YouTube |
-| 抖音 | 可尝试 | 使用 Chrome/Edge CDP；可能被平台反爬拦截 |
-| 西瓜视频 | 依赖登录态 | 可能需要浏览器 Cookies |
-| 腾讯视频 | 依赖登录态 | 可能需要浏览器 Cookies |
-| PSD | 支持 | 内置解析；复杂 Photoshop 特性存在限制 |
-| ZIP | 支持 | 默认查看目录，解压使用独立工具 |
-| PPT/PDF/Word/Excel | 支持 | 解析文本、结构和可提取图片 |
-| TXT/MD/JSON | 当前不支持 | 不属于当前文档解析范围 |
-
-工具失败时，Look Look 会报告具体失败原因。它不会把标题、URL 或部分元信息冒充成已经看过视频画面。
-
-## 环境要求
-
-- DeepSeek Harness `dsh web` v0.1.0-rc.7 或更高版本；
-- Node.js：由 DSH 提供；
-- Python 3.9+：视频 worker 和本地 ASR 使用；
-- ffmpeg：视频抽帧和音频提取；
-- yt-dlp：视频链接分析，插件环境检测可安装到隔离 venv；
-- 视觉模型：可选，识别图片和视频画面；
-- 音频模型：可选，理解声音和音乐；
-- 网络代理或登录 Cookies：部分视频平台需要。
-
-## Agent Skill
-
-Look Look 内置 Agent Skill，运行时会告诉 Agent：
-
-- 图片、视频、ZIP、PSD、PPT、PDF、Word、Excel 已经由 Look Look 内置处理；
-- 遇到这些内容优先直接调用 `looklook_see`；
-- 不要先运行 `npm install` 或 `pip install` 下载解析依赖；
-- PSD 默认分析整体设计和图层结构，不批量导出图层；
-- 视频网络失败、登录失败或反爬失败时不能编造内容。
-
-Skill 源码：
-
-```text
-src/looklook-skill.ts
-```
-
-维护文档：
-
-```text
-skills/looklook/SKILL.md
-```
-
-## 架构特点
-
-Look Look 采用零补丁架构：
-
-- 不修改全局 `@deepseek-ai/*` 包；
-- 不修改 DSH 核心图片准入逻辑；
-- 插件设置通过私有 `remote.looklook` RPC 管理；
-- 不把插件设置注册成全局 LLM provider；
-- 上传、设置、凭据、ASR、环境检测和会话模态查询使用授权 Remote RPC；
-- 视频 worker 的 stdout 保持为单一 JSON IPC 文档，yt-dlp 日志写入 stderr；
-- 插件卸载可以清理 settings、工具、RPC、渲染槽和监听器。
-
-## 安全和信任边界
-
-Look Look 定位为单用户桌面插件，适合本地或受信连接部署。
-
-- 文件路径读取遵循 DSH fs 沙箱；
-- 视频和 ZIP worker 处理模型提供的本地路径；
-- 上传文件名经过 basename 和路径安全检查；
-- 单文件上传上限为 100 MB；
-- 图片 URL 可能被转发给用户配置的视觉模型供应商；
-- Cookies 只用于 yt-dlp，不进入模型上下文；
-- 本地 ASR 安装会创建隔离 venv 并下载模型；
-- 多用户或不可信网络环境应自行增加网关和会话授权校验。
-
-## 开发
+## 构建与部署
 
 ```bash
-npm install
-npm run typecheck
+# 构建
 npm run build
-npm run verify
+
+# 部署（必须 build 后才 cp）
+cp -r lib/ /path/to/dsh/profile/node_modules/dsh-looklook/
+
+# 重启 DSH
+kill -9 $(ss -tlnp | grep 3080 | grep -oP 'pid=\K[0-9]+')
+cd /path/to/dsh/profile && npx dsh --profile web --port 3080 --no-open
+
+# 浏览器必须硬刷新（Ctrl+Shift+R）
 ```
 
-验证套件覆盖工具架构、Agent Skill 注入、图片引用、缩略图、上传安全、Office 文档解析和集成 smoke tests。
+## 版本历史
 
-开发日志位于项目工作区旁：
+详见 [CHANGELOG.md](./CHANGELOG.md)。核心版本对应：
 
-```text
-dsh-looklook-DEVLOG.md
-```
-
-## 许可证
-
-MIT
+| 版本 | DSH 版本 | 日期 | 主要变更 |
+|------|----------|------|----------|
+| 0821-rc.8 | v0.1.0-rc.8 | 2026-08-20 | ChatMinimap、CopySessionId、主题自适应、文件上传十进制时间戳、排队气泡修复 |
+| 0.3.0 | v0.1.0-rc.7 | 2026-08-19 | 升级 rc.7 适配、PPT 音频修复 |
+| 0.2.1 | v0.1.0-rc.6 | 2026-08-17 | 文件上传通道、消息渲染、设置面板、小眼睛 |

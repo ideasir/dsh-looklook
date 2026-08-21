@@ -12,11 +12,11 @@
  */
 
 import { useEffect, useState } from 'react'
-import { ImageLightbox } from '@deepseek-ai/dsh-client-ui-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { ImageLoader, ImageLightboxLabels } from '@deepseek-ai/dsh-client-ui-attachment'
-import { formatSize } from './format.ts'
+import { formatSize } from './upload-shared.ts'
 import { FileTypeIcon } from './FileTypeIcon.tsx'
+import { ImageLightbox, type ImageLoader, type ImageLightboxLabels } from './lightbox.tsx'
+import { VideoPlayer } from './video-player.tsx'
 
 /** The host's attachment marker: 「【附图:<ref-json-or-id>】」. */
 const IMAGE_MARKER_RE = /【附图:([^】]+)】/g
@@ -28,12 +28,16 @@ const HIDE_END = '【looklook:结束】'
 /** Host file marker: 「【looklook:file】{json}【looklook:file】」. */
 const FILE_MARKER_RE = /【looklook:file】([\s\S]*?)【looklook:file】/g
 
-/** Clean upload note written by the current client: 「[类型]name 排队中...」. */
-const CLEAN_NOTE_RE = /\[(图片|视频|压缩包|文档|文件)\]([^\n]+?)(?:\s*排队中\.\.\.)?\s*(?=\n|$)/g
+/** Clean upload note written by the current client:
+ *  「[类型]name【looklook:file】{json}【looklook:file】」.
+ *  Runs BEFORE FILE_MARKER_RE so the whole note is consumed as one unit. */
+const CLEAN_NOTE_RE = /\[(图片|视频|压缩包|文档|文件|音频|代码|文件)\]([^\n]*?)【looklook:file】(\{[^}]*\})【looklook:file】/g
 
 /** One staged file's metadata embedded in the marker. */
 interface FileMeta {
   name: string
+  /** Original user-facing filename (from the client-side File object). */
+  displayName?: string
   path: string
   size: number
 }
@@ -45,9 +49,17 @@ export type UploadImageLoader = (sessionId: string, name: string) => Promise<
 
 const IMAGE_EXT_RE = /\.(png|jpe?g|webp|gif|bmp|avif)$/i
 
+/** Video extensions (thumbnail + click-to-play). */
+const VIDEO_EXT_RE = /\.(mp4|mov|avi|mkv|webm|flv|wmv|m4v)$/i
+
 /** Whether a file marker's name looks like an image (thumbnail-able). */
 function isImageFileMeta(file: FileMeta): boolean {
   return IMAGE_EXT_RE.test(file.name)
+}
+
+/** Whether a file marker's name looks like a video (thumbnail + playable). */
+function isVideoFileMeta(file: FileMeta): boolean {
+  return VIDEO_EXT_RE.test(file.name)
 }
 
 /** One image file card: local thumbnail from the uploaded bytes + lightbox. */
@@ -82,10 +94,57 @@ function UploadImageCard({ sessionId, file, load }: {
       >
         {src === null
           ? <div style={{ width: 120, height: 90, borderRadius: 8, background: 'rgba(128,128,128,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontSize: 12 }}>加载中…</div>
-          : <img src={src} alt={file.name} style={{ maxWidth: 220, maxHeight: 220, borderRadius: 8, objectFit: 'cover', display: 'block' }} />}
+          : <img src={src} alt={file.displayName ?? file.name} style={{ maxWidth: 220, maxHeight: 220, borderRadius: 8, objectFit: 'cover', display: 'block' }} />}
       </button>
       {open && src !== null && (
         <ImageLightbox src={src} alt={file.name} labels={LIGHTBOX_LABELS} onClose={() => setOpen(false)} />
+      )}
+    </>
+  )
+}
+
+/** One video file card: thumbnail from the uploaded bytes + click-to-play. */
+function UploadVideoCard({ sessionId, file, load }: {
+  sessionId: string
+  file: FileMeta
+  load: UploadImageLoader
+}) {
+  const [src, setSrc] = useState<string | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    let live = true
+    setFailed(false)
+    load(sessionId, file.name).then(result => {
+      if (!live) return
+      if (result.ok) setSrc(`data:${result.mediaType};base64,${result.data}`)
+      else setFailed(true)
+    }).catch(() => { if (live) setFailed(true) })
+    return () => { live = false }
+  }, [sessionId, file.name, load])
+  if (failed) {
+    return <FileCard file={file} />
+  }
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => { if (src !== null) setPlaying(true) }}
+        aria-label="播放视频"
+        style={{ padding: 0, border: 0, background: 'none', cursor: src !== null ? 'pointer' : 'default', lineHeight: 0 }}
+      >
+        {src === null
+          ? <div style={{ width: 120, height: 90, borderRadius: 8, background: 'rgba(128,128,128,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontSize: 12 }}>加载中…</div>
+          : <video
+              src={src}
+              preload="metadata"
+              muted
+              playsInline
+              style={{ maxWidth: 220, maxHeight: 220, borderRadius: 8, objectFit: 'cover', display: 'block', background: '#000' }}
+            />}
+      </button>
+      {playing && src !== null && (
+        <VideoPlayer src={src} onClose={() => setPlaying(false)} />
       )}
     </>
   )
@@ -112,7 +171,7 @@ function FileCard({ file }: { file: FileMeta }) {
         <FileTypeIcon name={file.name} />
       </span>
       <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}>{file.name}</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}>{file.displayName ?? file.name}</span>
         <span style={{ fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' }}>{formatSize(file.size)}</span>
       </span>
     </span>
@@ -252,13 +311,15 @@ interface UserMessageNodeProps {
   sessionId?: string
   /** Load uploaded-file bytes back from `.uploads/` (injected by owner). */
   loadUpload?: UploadImageLoader
+  /** Global file registry: sessionId → filename → FileMeta (injected by owner). */
+  fileRegistry?: Map<string, Map<string, FileMeta>>
 }
 
 /**
  * Defensive user-message renderer: fixed-size thumbnails + native lightbox,
  * only the user's own text shown; falls back to plain text on unexpected shapes.
- * The fallback ALWAYS strips looklook markers (hidden ranges + file/image
- * markers) so raw marker code never flashes before the structured render.
+ * File metadata comes from the global fileRegistry (current session) or
+ * fallback FILE_MARKER_RE parsing (historical messages).
  */
 export function LooklookUserMessageNodeView(props: UserMessageNodeProps) {
   const content = props.node?.data?.content
@@ -288,12 +349,52 @@ export function LooklookUserMessageNodeView(props: UserMessageNodeProps) {
   }
   const embeddedRefs = collectEmbeddedRefs(rawBlocks.join(''))
   const joined = texts.join('')
+  const sessionId = props.sessionId ?? ''
+
+  // New format: [图片]filename (size) [f:serverName] — look up metadata from fileRegistry
+  const NEW_NOTE_RE = /\[(图片|视频|压缩包|文档|文件|音频|代码)\]([^\n]+?)\s*\([\d.]+ [KMGT]?B\)\s*\[f:([^\]]+)\]/g
+  const reg = props.fileRegistry?.get(sessionId)
+
   const cleaned = joined
+    .replace(NEW_NOTE_RE, (_all, _label: string, filename: string, serverName: string) => {
+      const trimmed = filename.trim()
+      const meta = reg?.get(trimmed)
+      if (meta) {
+        files.push({ name: meta.name, displayName: meta.displayName, path: meta.path, size: meta.size })
+      } else {
+        // No registry (e.g. after refresh): use serverName from [f:...] fallback
+        files.push({ name: serverName, displayName: trimmed, path: '', size: 0 })
+      }
+      return ''
+    })
+    // Backward compat: old-format CLEAN_NOTE_RE with JSON
+    .replace(CLEAN_NOTE_RE, (_all, _label: string, _name: string, payload: string) => {
+      try {
+        const parsed = JSON.parse(payload) as Partial<FileMeta>
+        if (typeof parsed?.name === 'string' && typeof parsed?.path === 'string') {
+          files.push({
+            name: parsed.name,
+            displayName: parsed.displayName ?? _name.trim(),
+            path: parsed.path,
+            size: typeof parsed.size === 'number' ? parsed.size : 0,
+          })
+        }
+      } catch {
+        files.push({ name: _name.trim(), displayName: _name.trim(), path: '', size: 0 })
+      }
+      return ''
+    })
+    // Backward compat: old-format FILE_MARKER_RE with JSON
     .replace(FILE_MARKER_RE, (_all, payload: string) => {
       try {
         const parsed = JSON.parse(payload) as Partial<FileMeta>
         if (typeof parsed?.name === 'string' && typeof parsed?.path === 'string') {
-          files.push({ name: parsed.name, path: parsed.path, size: typeof parsed.size === 'number' ? parsed.size : 0 })
+          files.push({
+            name: parsed.name,
+            displayName: parsed.displayName ?? parsed.name,
+            path: parsed.path,
+            size: typeof parsed.size === 'number' ? parsed.size : 0,
+          })
         }
       } catch {
         /* skip malformed file marker */
@@ -304,10 +405,6 @@ export function LooklookUserMessageNodeView(props: UserMessageNodeProps) {
       const parsed = parseMarkerRef(payload)
       const withMeta = embeddedRefs.get(parsed.attachmentId)
       attachments.push(withMeta ?? parsed)
-      return ''
-    })
-    .replace(CLEAN_NOTE_RE, (_all, _label: string, name: string) => {
-      files.push({ name: name.trim(), path: '', size: 0 })
       return ''
     })
   const trimmed = cleaned.trim()
@@ -322,17 +419,22 @@ export function LooklookUserMessageNodeView(props: UserMessageNodeProps) {
   })
   const load = props.loadImage ?? (() => Promise.reject(new Error('image loader unavailable')))
   const loadUpload = props.loadUpload
-  const sessionId = props.sessionId ?? ''
   const imageFiles = loadUpload !== undefined
     ? files.filter(file => isImageFileMeta(file))
     : []
-  const otherFiles = files.filter(file => !imageFiles.includes(file))
+  const videoFiles = loadUpload !== undefined
+    ? files.filter(file => isVideoFileMeta(file))
+    : []
+  const otherFiles = files.filter(file => !imageFiles.includes(file) && !videoFiles.includes(file))
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, margin: '8px 0' }}>
       {files.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
           {imageFiles.map((file, index) => (
             <UploadImageCard key={`${file.path}-${index}`} sessionId={sessionId} file={file} load={loadUpload as UploadImageLoader} />
+          ))}
+          {videoFiles.map((file, index) => (
+            <UploadVideoCard key={`${file.path}-${index}`} sessionId={sessionId} file={file} load={loadUpload as UploadImageLoader} />
           ))}
           {otherFiles.map((file, index) => <FileCard key={`${file.path}-${index}`} file={file} />)}
         </div>
