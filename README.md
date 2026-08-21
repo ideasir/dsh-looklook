@@ -4,7 +4,6 @@
 
 ![DSH 插件设置页](screenshots/04-settings-zh.jpg)
 ![插件验证报告](screenshots/06-verification-report.jpg)
-![looklook_see 工具分析图片](screenshots/05-looklook-see.jpg)
 
 ## 适配说明
 

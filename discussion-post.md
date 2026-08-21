@@ -74,8 +74,6 @@ cp -r lib/* ~/.dsh/profiles/web/node_modules/dsh-looklook/lib/
 
 ![插件验证报告](https://github.com/ideasir/dsh-looklook/raw/main/screenshots/06-verification-report.jpg)
 
-![looklook_see 工具分析图片](https://github.com/ideasir/dsh-looklook/raw/main/screenshots/05-looklook-see.jpg)
-
 ---
 
 ## 依赖
