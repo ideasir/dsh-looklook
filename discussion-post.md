@@ -1,74 +1,92 @@
-### 🎉 Look Look 插件 — 给 DSH 装上「眼睛」
+### Look Look — 让 DSH 能 Look 万物
 
-大家好，我做了一个 DSH 插件叫 **Look Look**（撸货），让 AI 能"看见"你发的文件。
+大家好，我做了一个 DSH 插件叫 **Look Look**（俗称撸货）。
+
+DSH 原生只能上传图片，格式支持很有限。这个插件把"看"的能力扩展到几乎所有常见文件格式。而且不光能看文件——还能看聊天记录，让新对话 look 旧对话。
 
 ---
 
-#### 能做什么？
+## 适配说明
 
-把文件直接拖进聊天框，AI 就能理解和分析：
+当前版本 `0821-rc.8`，适配 DSH `v0.1.0-rc.8`（开发者预览版）。
+
+DSH 目前还在开发者预览阶段，版本更新较频繁，后续会持续跟进适配。每次大版本更新后，我会尽量在短时间内发布适配版本。
+
+---
+
+## 部署方式
+
+从 GitHub 克隆仓库后本地构建：
+
+```bash
+git clone https://github.com/ideasir/dsh-looklook.git
+cd dsh-looklook
+npm install
+npm run build
+```
+
+构建完成后，把产物复制到 DSH profile 的 `node_modules` 目录：
+
+```bash
+# 假设 DSH profile 在 ~/.dsh/profiles/web
+mkdir -p ~/.dsh/profiles/web/node_modules/dsh-looklook
+cp -r lib/* ~/.dsh/profiles/web/node_modules/dsh-looklook/lib/
+```
+
+然后重启 DSH 即可。在设置页 Plugins → Look Look 中配置模型。
+
+> ⚠️ 插件尚未发布到 npm，需要从仓库克隆构建。以后视情况考虑发布。
+
+---
+
+## 功能介绍
+
+### 📁 Look 文件
+
+把文件拖进聊天框，AI 就能理解和分析：
 
 | 文件类型 | 能力 |
 |---------|------|
-| 📷 图片 | 描述内容、分析设计稿、回答图片相关问题 |
-| 🎬 视频 | 识别画面内容、回答视频相关问题 |
-| 🎵 音频 | 转录语音、理解录音内容 |
-| 📄 PDF | 本地解析，直接理解文档 |
-| 📝 Word/Excel/PPT | 本地解析 Office 文件 |
-| 🎨 PSD | 自动提取合成图预览 |
-| 📦 ZIP | 解压后内部文件一并理解 |
+| 📷 图片 | PNG/JPG/GIF/WebP/BMP/SVG/PSD/TIFF/HEIC/RAW 等 |
+| 🎬 视频 | 识别画面、场景分析、字幕提取、音频转写 |
+| 🎵 音频 | 语音转录、录音内容理解 |
+| 📄 文档 | PDF / Word / Excel / PPT，全部本地解析，不上传 |
+| 🎨 设计稿 | PSD 自动提取合成图预览 |
+| 📦 压缩包 | ZIP 内部文件一并理解 |
+
+### 💬 Look 聊天记录
+
+- **新对话 look 旧对话** — 可以把之前的对话内容喂给新会话，AI 能看懂上下文
+- **会话 ID 一键复制** — 方便跨会话传递上下文
+
+### 🧩 其他能力
+
+- **小眼睛开关** — 打开时走模型视觉能力，关闭时走文件上传通道（如 OpenAI file API）
+- **ChatMinimap** — 右侧对话导航标尺，快速跳转历史消息
+- **环境检测** — 一键检查本地依赖是否完整
+- **设置面板** — 配置视觉模型、音频模型、本地 ASR
 
 ---
 
-#### 插件设置页
+## 项目截图
 
-安装后，在 DSH 设置 → Plugins 中可以看到 Look Look：
+![DSH 插件设置页](https://github.com/ideasir/dsh-looklook/raw/main/screenshots/04-settings-zh.jpg)
 
-![插件列表](https://github.com/ideasir/dsh-looklook/raw/main/screenshots/02-plugins-list.png)
-
-点击展开后，可以配置视觉模型、音频模型、一键检测能力：
-
-![Look Look 详情](https://github.com/ideasir/dsh-looklook/raw/main/screenshots/03-looklook.png)
-
-> 💡 小眼睛开关打开时，图片走模型的视觉能力；关闭时走文件上传通道（如 OpenAI file API）。
-> PDF/Office/PSD/ZIP 都在本地解析，不上传网络。
+![looklook_see 工具分析图片](https://github.com/ideasir/dsh-looklook/raw/main/screenshots/05-looklook-see.jpg)
 
 ---
 
-#### 聊天界面
+## 依赖
 
-![DSH 主界面](https://github.com/ideasir/dsh-looklook/raw/main/screenshots/01-home.png)
-
----
-
-#### 怎么安装？
-
-```bash
-cd your-dsh-profile/web
-npm install dsh-looklook
-```
-
-装完重启 DSH 就行。在设置页 Plugins 中找到 Look Look，配置视觉模型和音频模型即可使用。
+- `pdfjs-dist` — PDF 解析
+- `psd.js` — PSD 文件解析
+- `adm-zip` / `fflate` — ZIP 解压
+- `fast-xml-parser` — Office XML 解析
+- `pngjs` — PNG 图片处理
+- 其他靠 DSH 自身的 Files API，零外部网络请求
 
 ---
 
-#### 依赖
+**GitHub**: https://github.com/ideasir/dsh-looklook
 
-- `pdf-parse` — PDF 解析（npm 安装时自动装）
-- `mime-types` — 文件类型识别
-- 其他全靠 DSH 自身的 Files API，零额外依赖
-
----
-
-#### 最新版本 `0821-rc.8`
-
-- 新增 ChatMinimap — 对话导航标尺，快速跳转
-- 新增复制会话 ID 按钮
-- 修复文件上传时间戳命名
-- 优化图标（Lucide + Tabler 标准风格）
-- 代码审计：合并冗余文件，清理构建产物
-
----
-
-**GitHub**: https://github.com/ideasir/dsh-looklook  
 有问题欢迎在 Issues 或本讨论区回复。
