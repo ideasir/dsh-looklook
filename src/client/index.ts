@@ -357,30 +357,6 @@ export function apply(ctx: ClientContext): void {
     throw new Error('result must be { ok: true, path, name, size } or { ok: false, error }')
   }
 
-  /** Strict wire schema for the ASR status. */
-  const parseAsrStatus = (value: unknown): { installed: boolean; phase: string; model: string; error: string | null } => {
-    if (typeof value !== 'object' || value === null) throw new Error('status must be an object')
-    const record = value as Record<string, unknown>
-    if (typeof record.installed !== 'boolean' || typeof record.phase !== 'string') throw new Error('status requires installed and phase')
-    return {
-      installed: record.installed,
-      phase: record.phase,
-      model: typeof record.model === 'string' ? record.model : 'medium',
-      error: typeof record.error === 'string' ? record.error : null,
-    }
-  }
-
-  /** Strict wire schema for the ASR install trigger. */
-  const parseAsrInstallResult = (value: unknown): { ok: true; phase: string; already: boolean } | { ok: false; error: string } => {
-    if (typeof value !== 'object' || value === null) throw new Error('result must be an object')
-    const record = value as Record<string, unknown>
-    if (record.ok === true && typeof record.phase === 'string') {
-      return { ok: true, phase: record.phase, already: record.already === true }
-    }
-    if (record.ok === false && typeof record.error === 'string') return { ok: false, error: record.error }
-    throw new Error('result must be { ok: true, phase } or { ok: false, error }')
-  }
-
   /** Strict wire schema for the session id argument. */
   const parseSessionId = (value: unknown): string => {
     if (typeof value !== 'string' || value === '') throw new Error('sessionId must be a non-empty string')
@@ -424,9 +400,9 @@ export function apply(ctx: ClientContext): void {
   const parseAsIs = (value: unknown): unknown => value
 
   /** Strict wire schema for the env-repair action. */
-  const parseEnvRepairAction = (value: unknown): 'install-yt-dlp' | 'install-asr' => {
-    if (value === 'install-yt-dlp' || value === 'install-asr') return value
-    throw new Error('action must be install-yt-dlp or install-asr')
+  const parseEnvRepairAction = (value: unknown): 'install-yt-dlp' => {
+    if (value === 'install-yt-dlp') return value
+    throw new Error('action must be install-yt-dlp')
   }
 
   /** Strict wire schema for the test-provider probe. */
@@ -444,7 +420,7 @@ export function apply(ctx: ClientContext): void {
     }
   }
 
-  // Model-discovery + upload + ASR RPCs: mount the `remote.looklook`
+  // Model-discovery + upload RPCs: mount the `remote.looklook`
   // namespace backed by the host LooklookRemoteService. Every method rides
   // the authorized connection (no unauth'd HTTP routes).
   ctx.effect(() => {
@@ -514,24 +490,6 @@ export function apply(ctx: ClientContext): void {
             codec: { mode: 'strict', typeSymbol: 'LooklookUploadPayload', schema: { parse: parseUploadPayload } },
           }],
           result: { mode: 'strict', typeSymbol: 'LooklookUploadResult', schema: { parse: parseUploadResult } },
-        },
-        {
-          id: 'looklook.asrStatus',
-          service: 'looklookRemote',
-          namespace: 'looklook',
-          method: 'asrStatus',
-          invocation: { kind: 'direct' },
-          parameters: [],
-          result: { mode: 'strict', typeSymbol: 'LooklookAsrStatus', schema: { parse: parseAsrStatus } },
-        },
-        {
-          id: 'looklook.asrInstall',
-          service: 'looklookRemote',
-          namespace: 'looklook',
-          method: 'asrInstall',
-          invocation: { kind: 'direct' },
-          parameters: [],
-          result: { mode: 'strict', typeSymbol: 'LooklookAsrInstallResult', schema: { parse: parseAsrInstallResult } },
         },
         {
           id: 'looklook.sessionModality',
@@ -763,51 +721,6 @@ export function apply(ctx: ClientContext): void {
     return { ok: false, error: typeof business?.error === 'string' ? business.error : '模态查询失败' }
   }
 
-  /** Read the local ASR install state through the authorized RPC. */
-  const asrStatus = async (): Promise<{ installed: boolean; phase: string; model: string; options: { id: string; name: string; sizeLabel: string }[]; error: string | null }> => {
-    const remote = ctx.get('remote.looklook') as {
-      asrStatus?: () => Promise<
-        { ok: boolean; value?: { installed: boolean; phase: string; model: string; options: { id: string; name: string; sizeLabel: string }[]; error: string | null } }
-      >
-    } | undefined
-    if (remote?.asrStatus === undefined) throw new Error('ASR 状态服务未就绪')
-    const envelope = await remote.asrStatus()
-    if (!envelope.ok) throw new Error('ASR 状态查询失败')
-    const value = envelope.value
-    if (value === undefined) throw new Error('ASR 状态查询失败')
-    return {
-      installed: value.installed === true,
-      phase: value.phase,
-      model: value.model,
-      options: Array.isArray(value.options) ? value.options : [],
-      error: value.error ?? null,
-    }
-  }
-
-  /** Trigger the local ASR install for one model through the authorized RPC.
-   *  The model is EXCLUSIVE on the host: installing a different size purges
-   *  the previous one. */
-  const asrInstall = async (model: string): Promise<{ ok: true; phase: string; already: boolean } | { ok: false; error: string }> => {
-    const remote = ctx.get('remote.looklook') as {
-      asrInstall?: (payload: { model: string }) => Promise<
-        { ok: boolean; value?: { ok: boolean; phase: string; already: boolean; error?: string }; error?: { message?: string } }
-      >
-    } | undefined
-    if (remote?.asrInstall === undefined) return { ok: false, error: 'ASR 安装服务未就绪' }
-    const envelope = await remote.asrInstall({ model })
-    if (!envelope.ok) {
-      return {
-        ok: false,
-        error: typeof envelope.error === 'string'
-          ? envelope.error
-          : envelope.error?.message ?? 'ASR 安装失败',
-      }
-    }
-    const business = envelope.value
-    if (business?.ok === true) return { ok: true, phase: business.phase, already: business.already === true }
-    return { ok: false, error: typeof business?.error === 'string' ? business.error : 'ASR 安装失败' }
-  }
-
   /** Run the environment self-check (settings dialog). */
   const envCheck = async (): Promise<EnvCheckReport> => {
     const remote = ctx.get('remote.looklook') as {
@@ -910,7 +823,7 @@ export function apply(ctx: ClientContext): void {
   }
 
   /** One-click repair for one env item; returns the item's fresh state. */
-  const envRepair = async (action: 'install-yt-dlp' | 'install-asr'): Promise<EnvCheckItem> => {
+  const envRepair = async (action: 'install-yt-dlp'): Promise<EnvCheckItem> => {
     const remote = ctx.get('remote.looklook') as {
       envRepair?: (action: string) => Promise<
         { ok: boolean; value?: EnvCheckItem; error?: { message?: string } }
@@ -1040,7 +953,6 @@ export function apply(ctx: ClientContext): void {
     return () => { dispose() }
   }, 'dsh-looklook: modality invalidation')
 
-  // ── Plugins settings → 插件配置: the looklook card (switches + vision + ASR). ──
   ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
     name: 'settings.plugin.item',
     key: PLUGIN_CARD_ID,
@@ -1054,8 +966,6 @@ export function apply(ctx: ClientContext): void {
       listModels,
       testVision,
       testAudio,
-      asrStatus,
-      asrInstall,
       envCheck,
       envRepair,
       capabilityCheck,

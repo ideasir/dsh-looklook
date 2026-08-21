@@ -1,6 +1,6 @@
 /**
  * EnvCheckDialog — the "环境检测" modal opened from the looklook plugin card.
- * Runs the host environment self-check (Python / ffmpeg / yt-dlp / local ASR)
+ * Runs the host environment self-check (Python / ffmpeg / yt-dlp / yt-dlp)
  * and lists every item with status. Repairable items show a "一键修复" button
  * that calls the host repair RPC and refreshes that item's state.
  */
@@ -14,7 +14,7 @@ import type { EnvCheckItem, EnvCheckReport } from './upload-shared.ts'
 export interface EnvCheckInjected {
   t: TranslateNS<'looklook'>
   envCheck: () => Promise<EnvCheckReport>
-  envRepair: (action: 'install-yt-dlp' | 'install-asr') => Promise<EnvCheckItem>
+  envRepair: (action: 'install-yt-dlp') => Promise<EnvCheckItem>
 }
 
 const css = {

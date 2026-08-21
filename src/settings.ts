@@ -20,7 +20,7 @@ import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 /**
  * Plugin-level master switch. One switch controls the whole plugin:
  * - ON (default): every capability is enabled — image/video/file recognition
- *   through the file channel, the looklook_see tool, upload channel, ASR.
+ *   through the file channel, the looklook_see tool, upload channel.
  * - OFF: the plugin is NOT uninstalled but is dormant — nothing is
  *   intercepted, the see tool answers "已关闭", and DSH behaves exactly as
  *   if the plugin were absent.
@@ -121,7 +121,7 @@ export interface AudioProviderConfig {
   enabled?: boolean
 }
 
-/** Audio settings: API providers only (local ASR install state is on disk). */
+/** Audio settings: API providers. */
 export interface AudioSettings {
   /** API audio provider(s); the first enabled is primary, the rest are fallbacks. */
   providers: AudioProviderConfig[]

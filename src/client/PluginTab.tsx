@@ -4,7 +4,6 @@
  * collapsible card chrome as the agent-loop / bash / web-search cards:
  * a header (title + description + chevron) that discloses:
  * - the feature switches (识别图像 / 识别视频);
- * - the model configuration (视觉模型 + 音频模型 + 本地 ASR 一键安装),
  *   visible while 识别图像 is ON.
  */
 
@@ -37,14 +36,10 @@ export interface LooklookCardInjected {
   testVision: ModelSettingsInjected['testVision']
   /** Probe one audio provider's capability level (L1/L2/none). */
   testAudio: ModelSettingsInjected['testAudio']
-  /** Read the local ASR install state through the authorized RPC. */
-  asrStatus: ModelSettingsInjected['asrStatus']
-  /** Trigger the local ASR install through the authorized RPC. */
-  asrInstall: ModelSettingsInjected['asrInstall']
   /** Run the environment self-check. */
   envCheck: () => Promise<EnvCheckReport>
   /** One-click repair for one env item. */
-  envRepair: (action: 'install-yt-dlp' | 'install-asr') => Promise<EnvCheckItem>
+  envRepair: (action: 'install-yt-dlp') => Promise<EnvCheckItem>
   /** 功能能力自检。 */
   capabilityCheck: () => Promise<CapabilityReport>
   /** 获取插件版本号。 */
@@ -98,7 +93,7 @@ const css = {
 
 /** The plugin-configuration card body. */
 export function LooklookPluginCard(props: LooklookCardInjected) {
-  const { api, pluginSettings, t, features, useFeatures, listModels, testVision, testAudio, asrStatus, asrInstall, envCheck, envRepair, capabilityCheck, getPluginVersion, checkUpdate, uninstallPlugin, usePluginEnabled } = props
+  const { api, pluginSettings, t, features, useFeatures, listModels, testVision, testAudio, envCheck, envRepair, capabilityCheck, getPluginVersion, checkUpdate, uninstallPlugin, usePluginEnabled } = props
   const [open, setOpen] = useState(false)
   const [envOpen, setEnvOpen] = useState(false)
   const [version, setVersion] = useState('')
@@ -108,7 +103,7 @@ export function LooklookPluginCard(props: LooklookCardInjected) {
   // Hook order stays stable: both hooks run before any conditional return.
   const pluginEnabled = usePluginEnabled()
   const featuresProps: FeaturesInjected = { api, t, features, useFeatures, capabilityCheck }
-  const modelProps: ModelSettingsInjected = { api, pluginSettings, t, listModels, testVision, testAudio, asrStatus, asrInstall }
+  const modelProps: ModelSettingsInjected = { api, pluginSettings, t, listModels, testVision, testAudio }
   const envProps: EnvCheckInjected = { t, envCheck, envRepair }
   const title = t('card.title')
 

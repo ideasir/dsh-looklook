@@ -6,7 +6,6 @@
  * - `upload` — save one dropped file into the session `.uploads/` (the
  *   "file channel": images never touch the native attachment pipeline, so
  *   api-proxy's model-modality check is never triggered);
- * - `asrStatus` / `asrInstall` — local ASR one-click install state/trigger;
  * - `sessionModality` — report whether the session's current model accepts
  *   image input, so the client can route a dropped image to the native
  *   pipeline (multi-modal model) or to the file channel (text-only model).
@@ -24,16 +23,6 @@ import { writeFileSync, readFileSync, existsSync, rmSync, readdirSync } from 'no
 import { join, resolve, sep, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { saveUpload, MAX_UPLOAD_BYTES, safeFileName, UPLOADS_DIR } from './upload.ts'
-import {
-  localAsrReady,
-  performInstall,
-  readReadyMarker,
-  installedAsrModel,
-  currentInstallPhase,
-  currentInstallError,
-  ASR_MODEL_OPTIONS,
-  type AsrInstallPhase,
-} from './asr-install.ts'
 import { runEnvCheck, repairEnv, type EnvCheckReport, type EnvCheckItem } from './env-check.ts'
 import { runCapabilityCheck, type CapabilityReport } from './capability-check.ts'
 import { chatCompletionsUrl } from './vision-client.ts'
@@ -78,22 +67,7 @@ export type LooklookCredentialsResult =
   | { ok: true; credentials: Record<string, { configured: boolean; writable: boolean }> }
   | { ok: false; error: string }
 
-/** Local ASR install status. */
-export interface LooklookAsrStatus {
-  installed: boolean
-  phase: AsrInstallPhase
-  /** Currently installed model id ('' when none). */
-  model: string
-  /** Selectable model options (id/name/size). */
-  options: Array<{ id: string; name: string; sizeLabel: string }>
-  error: string | null
-}
 
-/** One ASR install trigger request. */
-export interface LooklookAsrInstallPayload {
-  /** Desired model id (tiny/base/small/medium/large-v3); default small. */
-  model?: string
-}
 
 /** Session modality probe outcome. */
 export type LooklookModalityResult =
@@ -247,43 +221,9 @@ export class LooklookRemoteService extends TypertRemoteService {
     }
   }
 
-  /** Report the local ASR install state (ready marker + in-memory phase). */
-  @Remote
-  async asrStatus(): Promise<LooklookAsrStatus> {
-    const installed = await localAsrReady()
-    const currentModel = await installedAsrModel()
-    const memPhase = currentInstallPhase()
-    const isActive = memPhase === 'checking' || memPhase === 'installing-deps'
-      || memPhase === 'downloading-model' || memPhase === 'writing'
-    return {
-      // While an install is actively running (incl. a SWAP), the old ready
-      // marker may still exist — do NOT report installed/done then, or the
-      // client stops polling and misses the swap. installed is true only
-      // when a marker exists AND nothing is running.
-      installed: installed && !isActive,
-      phase: isActive ? memPhase : (installed ? 'done' : memPhase),
-      model: currentModel ?? '',
-      options: ASR_MODEL_OPTIONS.map(({ id, name, sizeLabel }) => ({ id, name, sizeLabel })),
-      error: currentInstallError(),
-    }
-  }
 
-  /**
-   * Trigger the local ASR install for one model (idempotent per model). The
-   * model is EXCLUSIVE: installing a new size purges the previous one.
-   * Returns the current phase after starting or acknowledging; the client
-   * polls asrStatus for progress.
-   */
-  @Remote
-  async asrInstall(payload?: LooklookAsrInstallPayload): Promise<{ ok: true; phase: AsrInstallPhase; already: boolean } | { ok: false; error: string }> {
-    try {
-      const model = payload?.model ?? undefined
-      const outcome = await startInstallIfNeeded(model)
-      return { ok: true, ...outcome }
-    } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  }
+
+
 
   /**
    * Report whether the session's current model accepts image input, by
@@ -380,7 +320,7 @@ export class LooklookRemoteService extends TypertRemoteService {
 
   /** One-click repair for one env item; returns the item's fresh state. */
   @Remote
-  async envRepair(action: 'install-yt-dlp' | 'install-asr'): Promise<EnvCheckItem> {
+  async envRepair(action: 'install-yt-dlp'): Promise<EnvCheckItem> {
     try {
       return await repairEnv(action)
     } catch (error) {
@@ -402,17 +342,15 @@ export class LooklookRemoteService extends TypertRemoteService {
       // 读取视觉/音频模型是否已配置
       let hasVisionModel = false
       let hasAudioModel = false
-      let hasLocalAsr = false
       try {
         const vision = settings?.get(settingsNamespace('vision')) as { providers?: Array<{ enabled?: boolean }> } | undefined
         hasVisionModel = (vision?.providers ?? []).some(p => p.enabled !== false)
         const audio = settings?.get(settingsNamespace('looklook-audio')) as { providers?: Array<{ enabled?: boolean }> } | undefined
         hasAudioModel = (audio?.providers ?? []).some(p => p.enabled !== false)
-        hasLocalAsr = await localAsrReady()
       } catch {
         // settings 未就绪时按未配置处理
       }
-      return await runCapabilityCheck(hasVisionModel, hasAudioModel, hasLocalAsr)
+      return await runCapabilityCheck(hasVisionModel, hasAudioModel)
     } catch (error) {
       return {
         ok: false,
@@ -648,33 +586,6 @@ function mediaTypeOfUpload(name: string): string | undefined {
   }
 }
 
-// ── ASR install trigger (single installer at a time; state lives in asr-install.ts) ──
-
-/** Start the install for one model; returns (phase, already).
- * Rules:
- * - already done with the SAME model → already:true;
- * - already done with a DIFFERENT model → swap (purge old, install new);
- * - a mid-phase install is refused (single installer at a time);
- * - otherwise start a fresh install. */
-async function startInstallIfNeeded(model?: string): Promise<{ phase: AsrInstallPhase; already: boolean }> {
-  const currentModel = await installedAsrModel()
-  const ready = await localAsrReady()
-  // Same model already installed.
-  if (ready && (model === undefined || model === currentModel)) {
-    return { phase: 'done', already: true }
-  }
-  // Already installed but the user asked for a DIFFERENT size → swap.
-  if (ready && model !== undefined && model !== currentModel) {
-    void performInstall(model)
-    return { phase: 'checking', already: false }
-  }
-  // A mid-phase install is running → refuse.
-  if (currentInstallPhase() !== 'none' && currentInstallPhase() !== 'failed') {
-    return { phase: currentInstallPhase(), already: true }
-  }
-  void performInstall(model)
-  return { phase: 'checking', already: false }
-}
 
 // ── Audio capability probes (used by testAudio) ──
 
@@ -771,4 +682,4 @@ async function probeAudioL1(
   }
 }
 
-export { MAX_UPLOAD_BYTES, readReadyMarker }
+export { MAX_UPLOAD_BYTES }

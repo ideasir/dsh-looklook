@@ -14,31 +14,6 @@ DSH 目前还在开发者预览阶段，版本更新较频繁，后续会持续�
 
 ---
 
-## 部署方式
-
-从 GitHub 克隆仓库后本地构建：
-
-```bash
-git clone https://github.com/ideasir/dsh-looklook.git
-cd dsh-looklook
-npm install
-npm run build
-```
-
-构建完成后，把产物复制到 DSH profile 的 `node_modules` 目录：
-
-```bash
-# 假设 DSH profile 在 ~/.dsh/profiles/web
-mkdir -p ~/.dsh/profiles/web/node_modules/dsh-looklook
-cp -r lib/* ~/.dsh/profiles/web/node_modules/dsh-looklook/lib/
-```
-
-然后重启 DSH 即可。在设置页 Plugins → Look Look 中配置模型。
-
-> ⚠️ 插件尚未发布到 npm，需要从仓库克隆构建。以后视情况考虑发布。
-
----
-
 ## 功能介绍
 
 ### 📁 Look 文件
@@ -61,7 +36,7 @@ cp -r lib/* ~/.dsh/profiles/web/node_modules/dsh-looklook/lib/
 
 ### 🧩 其他能力
 
-- **小眼睛开关** — 打开时走模型视觉能力，关闭时走文件上传通道（如 OpenAI file API）
+- **小眼睛开关** — 打开时走模型视觉能力，关闭时走文件上传通道
 - **ChatMinimap** — 右侧对话导航标尺，快速跳转历史消息
 - **环境检测** — 一键检查本地依赖是否完整
 - **设置面板** — 配置视觉模型、音频模型、本地 ASR
@@ -73,17 +48,6 @@ cp -r lib/* ~/.dsh/profiles/web/node_modules/dsh-looklook/lib/
 ![DSH 插件设置页](https://github.com/ideasir/dsh-looklook/raw/main/screenshots/04-settings-zh.jpg)
 
 ![插件验证报告](https://github.com/ideasir/dsh-looklook/raw/main/screenshots/06-verification-report.jpg)
-
----
-
-## 依赖
-
-- `pdfjs-dist` — PDF 解析
-- `psd.js` — PSD 文件解析
-- `adm-zip` / `fflate` — ZIP 解压
-- `fast-xml-parser` — Office XML 解析
-- `pngjs` — PNG 图片处理
-- 其他靠 DSH 自身的 Files API，零外部网络请求
 
 ---
 

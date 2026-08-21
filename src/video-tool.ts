@@ -12,7 +12,6 @@
  *        in one call); on a format rejection fall back to the LOW route
  *        (/v1/audio/transcriptions → transcript only). The probed capability
  *        is remembered per provider to avoid repeating the failed attempt.
- *      - else, if the local ASR install exists, use it (transcript only).
  *      - else, no audio understanding (subtitles only).
  *   3. Frames are described by the vision model (each frame, structured
  *      prompt) and returned as a "画面时间线" so the main model sees what
@@ -22,9 +21,10 @@
  * missing dependencies surface as classified messages instead of a crash.
  */
 
+
 import { spawn } from 'node:child_process'
 import { mkdir, readFile } from 'node:fs/promises'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
@@ -32,6 +32,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { AudioProviderConfig, AudioScope, VisionScope } from './settings.ts'
 import { enabledAudioProviders, enabledProviders } from './settings.ts'
 import { chatCompletionsUrl } from './vision-client.ts'
+import { VENV_PYTHON } from './python-env.ts'
 import { detectPython } from './python-env.ts'
 
 /** The vendored worker's directory (scripts/video-worker next to this file). */
@@ -45,19 +46,6 @@ const WORKER_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts'
  */
 const TMP_DIR = join(tmpdir(), 'dsh-looklook')
 
-/** The local ASR install root: $DSH_HOME/looklook-asr (same formula as
- * asr-install.ts) — machine-local state outside node_modules. */
-const ASR_DIR = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'looklook-asr')
-/** The plugin's isolated Python venv (created by the ASR installer). */
-const VENV_DIR = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'looklook-venv')
-/** The venv's python executable (POSIX bin/python, Windows Scripts/python.exe). */
-const VENV_PYTHON = process.platform === 'win32'
-  ? join(VENV_DIR, 'Scripts', 'python.exe')
-  : join(VENV_DIR, 'bin', 'python')
-/** The local ASR install marker file (set by the one-click installer). */
-const LOCAL_ASR_MARKER = join(ASR_DIR, 'ready')
-/** The local ASR transcribe script (written by the installer). */
-const LOCAL_ASR_SCRIPT = join(ASR_DIR, 'transcribe.py')
 
 /**
  * Resolve the machine's configured outbound proxy without exposing its value.
@@ -323,7 +311,7 @@ async function cleanupWav(wavPath: string): Promise<void> {
 }
 
 /**
- * Compute audio-understanding slices. With ASR segments, slices follow the
+ * Compute audio-understanding slices. With pause segments, slices follow the
  * transcript's natural pauses (gap ≥ 2s starts a new slice, at most
  * `maxSlices`). Without segments, slices are fixed 60s blocks so a long
  * video never loads a whole multi-hour WAV into memory (C4 fix): a video of
@@ -459,48 +447,10 @@ async function audioLow(
   }
 }
 
-/** Local ASR (one-click installed) — LOW route only. */
-async function audioLocal(
-  wavPath: string,
-  signal: AbortSignal,
-): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
-  // Run with the ISOLATED venv python (faster-whisper lives there), never the
-  // system python. If the venv is missing, the ASR install was not completed.
-  const venvPy = VENV_PYTHON
-  return new Promise((resolveBody) => {
-    const script = LOCAL_ASR_SCRIPT
-    const child = spawn(venvPy, [script, wavPath], {
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }) as import('node:child_process').ChildProcessByStdio<null, import('node:stream').Readable, import('node:stream').Readable>
-    let stdout = ''
-    let stderr = ''
-    let settled = false
-    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString('utf8') })
-    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8') })
-    child.on('close', (code) => {
-      if (settled) return
-      settled = true
-      if (code !== 0) {
-        resolveBody({ ok: false, error: stderr.trim().slice(-300) || '本地 ASR 失败' })
-        return
-      }
-      const text = stdout.trim()
-      resolveBody(text === '' ? { ok: false, error: '本地 ASR 返回空内容' } : { ok: true, text })
-    })
-    signal.addEventListener('abort', () => {
-      if (settled) return
-      settled = true
-      child.kill('SIGKILL')
-      resolveBody({ ok: false, error: '已取消' })
-    }, { once: true })
-  })
-}
-
 /**
  * Capability-probed audio understanding per time slice: HIGH first, fall back
  * to LOW only on format rejection; remembers the probe per provider. Slices
- * come from the ASR transcript's natural pauses (or one whole slice when no
+ * come from the transcript's natural pauses (or one whole slice when no
  * transcript). Returns [] when no audio path is available or nothing is
  * configured/installed.
  */
@@ -553,16 +503,7 @@ async function understandAudio(
         }
       }
       if (resolved) continue
-      // No usable API provider — try the local one-click ASR install.
-      const localOk = await import('node:fs').then(fs => fs.promises.access(LOCAL_ASR_MARKER).then(() => true).catch(() => false))
-      if (localOk) {
-        const local = await audioLocal(wavPath, signal)
-        if (local.ok) {
-          results.push({ ok: true, high: false, start: slice.start, end: slice.end, text: local.text })
-          continue
-        }
-      }
-      results.push({ ok: false, start: slice.start, end: slice.end, error: '未配置音频模型或本地 ASR' })
+      results.push({ ok: false, start: slice.start, end: slice.end, error: '未配置音频模型' })
     } finally {
       if (wavPath !== undefined) await cleanupWav(wavPath)
     }
@@ -781,7 +722,7 @@ export async function watchVideo(
       return resolvedCred?.value
     }
 
-    // Audio understanding: slice by ASR pauses (or fixed 60s blocks when the
+    // Audio understanding: slice by pause (or fixed 60s blocks when the
     // transcript has no segments), probe capability per slice. Runs whenever
     // there is an audio path — WITH subtitles too, because L3 (tone / music /
     // pace) is exactly what subtitles cannot provide (H3 fix).

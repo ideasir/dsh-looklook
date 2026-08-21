@@ -3,7 +3,7 @@
  * video understanding:
  * - probe a video's streams (duration, audio presence, subtitle tracks);
  * - extract frames for the vision model (L1 画面);
- * - extract the audio track as 16 kHz mono WAV for ASR / audio models (L2/L3);
+ * - extract the audio track as 16 kHz mono WAV for audio models (L2/L3);
  * - export a subtitle track to SRT text when present (cheapest L2 path).
  *
  * Depends on ffmpeg/ffprobe being installed on the host (checked at runtime;
@@ -151,7 +151,7 @@ export async function extractFrames(path: string, maxFrames = 8): Promise<{ fram
 }
 
 /**
- * Extract the audio track as a 16 kHz mono WAV (the format ASR and audio
+ * Extract the audio track as a 16 kHz mono WAV (the format audio
  * models expect). Returns the temp file path; the caller owns cleanup.
  */
 export async function extractAudio(path: string): Promise<{ wavPath: string; tempDir: string }> {

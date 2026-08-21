@@ -6,12 +6,10 @@
  *
  * Checks:
  * - Python runtime (python3 / python / py) — required by the video worker and
- *   the local ASR install;
+ *   the yt-dlp install;
  * - ffmpeg — required by video frame extraction / audio sampling;
  * - yt-dlp (Python package) — required by video-URL analysis; **repairable**
- *   via `python -m pip install yt-dlp`;
- * - local ASR install (faster-whisper + ready marker) — repairable via the
- *   existing one-click ASR installer.
+   via `python -m pip install yt-dlp`;
  */
 
 import { spawn } from 'node:child_process'
@@ -20,7 +18,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { configuredVideoProxy } from './video-tool.ts'
 import { detectPython } from './python-env.ts'
-import { localAsrReady, ensureVenv, VENV_DIR } from './asr-install.ts'
+import { ensureVenv, VENV_DIR } from './python-env.ts'
 
 /** The plugin's isolated venv python (POSIX bin/python, Windows Scripts/python.exe). */
 const VENV_PYTHON = process.platform === 'win32'
@@ -58,7 +56,7 @@ export interface EnvCheckItem {
   /** Whether this item can be repaired with a one-click action. */
   repairable: boolean
   /** One-click repair action id (only when repairable). */
-  repairAction?: 'install-yt-dlp' | 'install-asr'
+  repairAction?: 'install-yt-dlp'
   /** Guidance shown when the item is missing and not repairable. */
   guidance?: string
 }
@@ -151,28 +149,8 @@ async function checkYtDlp(pythonCmd: string): Promise<EnvCheckItem> {
   }
 }
 
-/** Check the local ASR install — repairable via the one-click installer. */
-async function checkLocalAsr(): Promise<EnvCheckItem> {
-  const ready = await localAsrReady()
-  return {
-    id: 'asr',
-    label: '本地 ASR（faster-whisper）',
-    status: ready ? 'ok' : 'missing',
-    detail: ready ? '已就绪' : '未安装',
-    repairable: true,
-    repairAction: 'install-asr',
-    ...ready ? {} : { guidance: '点击「一键修复」安装 faster-whisper 与转写模型（约 1.5 GB，耗时较长）。' },
-  }
-}
-
 /** Repair one action. Returns the new per-item state. */
-export async function repairEnv(action: 'install-yt-dlp' | 'install-asr'): Promise<EnvCheckItem> {
-  if (action === 'install-asr') {
-    // Delegate to the existing one-click ASR installer (idempotent).
-    const { performInstall } = await import('./asr-install.ts')
-    await performInstall()
-    return await checkLocalAsr()
-  }
+export async function repairEnv(action: 'install-yt-dlp'): Promise<EnvCheckItem> {
   // install-yt-dlp: install INTO the plugin's isolated venv (create it on
   // first use). Never touches the system Python.
   const pyEnv = await detectPython()
@@ -240,7 +218,7 @@ export async function runEnvCheck(): Promise<EnvCheckReport> {
       id: 'python',
       label: 'Python 运行时',
       status: 'ok',
-      detail: `${probe.ok ? probe.stdout.trim() || pyEnv.command : pyEnv.command}${hasVenv ? '（隔离环境已就绪）' : '（隔离环境未创建，装本地 ASR 时自动创建）'}`,
+      detail: `${probe.ok ? probe.stdout.trim() || pyEnv.command : pyEnv.command}${hasVenv ? '（隔离环境已就绪）' : '（隔离环境未创建）'}`,
       repairable: false,
     })
   } else {
@@ -250,7 +228,7 @@ export async function runEnvCheck(): Promise<EnvCheckReport> {
       status: 'missing',
       detail: pyEnv.error ?? '未找到',
       repairable: false,
-      guidance: '视频分析和本地 ASR 依赖 Python 3.9+。请安装后确保 `python3`（或 `python`/`py`）在 PATH 中。\n• Windows：从 python.org 下载安装（安装时勾选 Add to PATH）\n• macOS：`brew install python`\n• Debian/Ubuntu：`sudo apt install python3`',
+      guidance: '视频分析依赖 Python 3.9+。请安装后确保 `python3`（或 `python`/`py`）在 PATH 中。\n• Windows：从 python.org 下载安装（安装时勾选 Add to PATH）\n• macOS：`brew install python`\n• Debian/Ubuntu：`sudo apt install python3`',
     })
   }
 
@@ -271,9 +249,6 @@ export async function runEnvCheck(): Promise<EnvCheckReport> {
       guidance: '先安装 Python 后再检测。',
     })
   }
-
-  // 4) local ASR.
-  items.push(await checkLocalAsr())
 
   const failed = items.filter(item => item.status !== 'ok').length
   return {

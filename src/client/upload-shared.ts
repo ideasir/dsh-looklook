@@ -96,7 +96,7 @@ export interface EnvCheckItem {
   status: 'ok' | 'missing' | 'error'
   detail: string
   repairable: boolean
-  repairAction?: 'install-yt-dlp' | 'install-asr'
+  repairAction?: 'install-yt-dlp'
   guidance?: string
 }
 

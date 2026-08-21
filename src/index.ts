@@ -17,7 +17,7 @@
  * configurable LLM providers, because rc.6 renders every such entry in the
  * global model-provider picker. No `WEB_SETTINGS_NAMESPACES` patch.
  *
- * Upload / ASR install / model discovery / env check are Remote RPCs on the
+ * Upload / model discovery / env check are Remote RPCs on the
  * `looklook` wire namespace (Typert), so they inherit the api-proxy
  * connection authorization instead of exposing unauth'd HTTP routes.
  *
@@ -50,13 +50,13 @@ export const inject = ['settings', 'llm', 'sessions', 'credentials', 'tools', 's
 /**
  * Plugin body: register the feature toggles + vision/audio settings
  * namespaces, expose their private settings RPCs, register the unified
- * looklook_see / process_zip tools, the upload RPC, and the ASR install RPC.
+ * looklook_see / process_zip tools, the upload RPC.
  */
 export function apply(ctx: Context, config: VisionSettings): void {
   // Feature master switches (settings page → plugin area).
   const features: LooklookScope = ctx.settings.register(settingsNamespace('looklook'), LooklookConfig, { base: undefined })
   const scope: VisionScope = ctx.settings.register(settingsNamespace('vision'), Config, { base: config })
-  // Audio model (L2+L3 merged): API providers; local ASR install state on disk.
+  // Audio model (L2+L3 merged): API providers; primary + fallback.
   const audioScope: AudioScope = ctx.settings.register(settingsNamespace('looklook-audio'), AudioConfig, { base: undefined })
 
   // Plugin-owned settings are served through the private remote.looklook RPCs
@@ -68,7 +68,7 @@ export function apply(ctx: Context, config: VisionSettings): void {
   // OFF = dormant, harness behaves as without it). The see tool answers
   // "已关闭" when OFF; client interception is gated by the same flag.
 
-  // Host receiver for the client's RPCs (model discovery, upload, ASR install,
+  // Host receiver for the client.s RPCs (model discovery, upload,
   // session modality, env check). All ride the authorized api-proxy connection.
   ctx.plugin(LooklookRemoteService)
 

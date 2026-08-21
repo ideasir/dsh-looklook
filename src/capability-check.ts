@@ -3,7 +3,7 @@
  *
  * 检测每种识别能力是否完整可用，返回每项的状态和失败原因。
  * 与 env-check.ts（运行环境检测）互补：
- * - env-check 检查 代理/ffmpeg/Python/yt-dlp/ASR 等运行依赖
+ * - env-check 检查 代理/ffmpeg/Python/yt-dlp 等运行依赖
  * - capability-check 检查 图像/视频/声音/PSD/Office/视频平台 等识别能力
  */
 
@@ -58,12 +58,10 @@ async function checkOfficeParser(): Promise<CapabilityItem> {
  * 运行完整功能检测。
  * @param hasVisionModel - 视觉模型是否已配置（>0 个 enabled provider）
  * @param hasAudioModel - 音频模型是否已配置（>0 个 enabled provider）
- * @param hasLocalAsr - 本地 ASR 是否已安装
  */
 export async function runCapabilityCheck(
   hasVisionModel: boolean,
   hasAudioModel: boolean,
-  hasLocalAsr: boolean,
 ): Promise<CapabilityReport> {
   // 先跑环境检测获取 ffmpeg/yt-dlp 状态
   const envReport = await runEnvCheck()
@@ -88,9 +86,9 @@ export async function runCapabilityCheck(
     // 3. 识别声音
     !ffmpegOk
       ? { id: 'audio', label: '识别声音检测', status: 'fail', errorReason: '缺少 ffmpeg（音频采样），请安装 ffmpeg 后重启 DSH' }
-      : !hasAudioModel && !hasLocalAsr
-        ? { id: 'audio', label: '识别声音检测', status: 'fail', errorReason: '未配置音频模型且未安装本地 ASR，请添加 AI 语音服务提供商或安装本地 ASR' }
-        : { id: 'audio', label: '识别声音检测', status: 'ok', errorReason: `音频识别链路完整（ffmpeg + ${hasAudioModel ? '音频模型' : ''}${hasAudioModel && hasLocalAsr ? ' + ' : ''}${hasLocalAsr ? '本地 ASR' : ''}）` },
+      : !hasAudioModel && !false
+        ? { id: 'audio', label: '识别声音检测', status: 'fail', errorReason: '未配置音频模型，请在插件设置中添加音频模型提供商' }
+        : { id: 'audio', label: '识别声音检测', status: 'ok', errorReason: '音频识别链路完整（ffmpeg + 音频模型）' },
 
     // 4. 识别 PSD
     await checkPsdParser(),
